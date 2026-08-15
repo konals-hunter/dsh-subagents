@@ -482,6 +482,103 @@ describe('SubagentStore', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('does not save or notify when an update patch equals the current profile', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({
+        id: 'same-update',
+        name: 'Same',
+        description: 'Same desc',
+        reasoningEffort: 'high',
+        maxTokens: 123,
+        maxDepth: 2,
+      }))
+      const filtered = store.create(payload({ id: 'same-filter', toolFilter: { allow: ['read'] } }))
+      const events: string[] = []
+      store.subscribe(() => events.push('change'))
+      const before = readFileSync(store.path, 'utf8')
+
+      const same = store.update('same-update', {
+        name: 'Same',
+        description: 'Same desc',
+        enabled: true,
+        provider: 'spawn',
+        modelProvider: 'jiyuan',
+        model: 'deepseek-v4-flash-0731',
+        reasoningEffort: 'high',
+        maxTokens: 123,
+        maxDepth: 2,
+        toolFilter: null,
+        backgroundMode: 'one-shot',
+      })
+      expect(same.updatedAt).toBe(created.updatedAt)
+      expect(events).toEqual([])
+      expect(readFileSync(store.path, 'utf8')).toBe(before)
+
+      const sameFilter = store.update('same-filter', {
+        toolFilter: { allow: ['read'] },
+      })
+      expect(sameFilter.updatedAt).toBe(filtered.updatedAt)
+      expect(events).toEqual([])
+      expect(readFileSync(store.path, 'utf8')).toBe(before)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('records and resolves continuable profile ids across store reloads', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.list()
+      store.recordContinuableProfile('child-1', 'explore')
+      const reloaded = new SubagentStore(store.path)
+      expect(reloaded.resolveContinuableProfile('child-1')).toBe('explore')
+
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        continuableProfiles?: Record<string, string>
+      }
+      expect(raw.continuableProfiles).toEqual({ 'child-1': 'explore' })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats a missing continuableProfiles field as empty and remains writable', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    writeFileSync(path, JSON.stringify({ version: 1, profiles: [storedProfile()] }), 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.resolveContinuableProfile('child-1')).toBeUndefined()
+      expect(store.isCorrupt()).toBe(false)
+      store.recordContinuableProfile('child-1', 'custom-1')
+      expect(store.resolveContinuableProfile('child-1')).toBe('custom-1')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('drops unknown keys from stored profiles during normalization', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const profile = storedProfile({
+      id: 'custom-unknown',
+      persona: '  Hello  ',
+      unknownKey: 'ignored',
+      nested: { value: 1 },
+    })
+    writeFileSync(path, JSON.stringify({ version: 1, profiles: [profile] }), 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      const loaded = store.find('custom-unknown')
+      expect(loaded?.persona).toBe('Hello')
+      expect(loaded).not.toHaveProperty('unknownKey')
+      expect(loaded).not.toHaveProperty('nested')
+      expect(store.isCorrupt()).toBe(false)
+
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+        profiles: Array<Record<string, unknown>>
+      }
+      const stored = raw.profiles.find(entry => entry.id === 'custom-unknown')
+      expect(stored).not.toHaveProperty('unknownKey')
+      expect(stored).not.toHaveProperty('nested')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('normalizes optional strings and toolFilter arrays when loading stored profiles', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
     const path = join(dir, 'store.json')

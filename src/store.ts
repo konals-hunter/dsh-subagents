@@ -34,6 +34,8 @@ export function storePath(): string {
 interface StoreFile {
   version: number
   profiles: SubagentProfile[]
+  /** Durable child-session -> profile-id map used for continuable effort injection. */
+  continuableProfiles?: Record<string, string>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,6 +81,32 @@ function hasDuplicateIds(profiles: SubagentProfile[]): boolean {
   }
   return false
 }
+
+function isStoredContinuableProfiles(value: unknown): value is Record<string, string> {
+  if (!isRecord(value)) return false
+  return Object.keys(value).every(key => key !== '') &&
+    Object.values(value).every(isStoredNonEmptyString)
+}
+
+const PROFILE_FIELDS = new Set<string>([
+  'id',
+  'name',
+  'description',
+  'enabled',
+  'builtin',
+  'provider',
+  'modelProvider',
+  'model',
+  'reasoningEffort',
+  'maxTokens',
+  'maxDepth',
+  'persona',
+  'promptTemplate',
+  'toolFilter',
+  'backgroundMode',
+  'createdAt',
+  'updatedAt',
+])
 
 function parseReasoningEffort(value: unknown): ReasoningEffort | undefined {
   if (value === undefined || value === null) return undefined
@@ -132,6 +160,12 @@ function sameToolFilter(left: ToolFilter | undefined, right: ToolFilter | undefi
   )
 }
 
+function sameProfileField(profile: SubagentProfile, key: string, value: unknown): boolean {
+  if (key === 'toolFilter') return sameToolFilter(value === null ? undefined : value as ToolFilter | undefined, profile.toolFilter)
+  const current = (profile as unknown as Record<string, unknown>)[key]
+  return (value ?? undefined) === (current ?? undefined)
+}
+
 function normalizeToolFilter(toolFilter: ToolFilter): ToolFilter | undefined {
   const allow = toolFilter.allow?.map(item => item.trim()).filter(item => item !== '')
   const deny = toolFilter.deny?.map(item => item.trim()).filter(item => item !== '')
@@ -141,23 +175,46 @@ function normalizeToolFilter(toolFilter: ToolFilter): ToolFilter | undefined {
   return sameToolFilter(next, toolFilter) ? undefined : next
 }
 
-/** Trim optional strings/toolFilter arrays on stored profiles while keeping validated required fields untouched. */
+/**
+ * Rebuild a stored profile from the known-field whitelist, trimming optional
+ * strings/toolFilter arrays and dropping any unknown keys.
+ */
 function normalizeStoredProfile(profile: SubagentProfile): SubagentProfile {
-  const next = { ...profile }
-  let changed = false
-  if (profile.persona !== undefined && profile.persona !== profile.persona.trim()) {
-    next.persona = profile.persona.trim()
-    changed = true
+  const next: SubagentProfile = {
+    id: profile.id,
+    name: profile.name,
+    description: profile.description,
+    enabled: profile.enabled,
+    builtin: profile.builtin,
+    provider: profile.provider,
+    modelProvider: profile.modelProvider,
+    model: profile.model,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
   }
-  if (profile.promptTemplate !== undefined && profile.promptTemplate !== profile.promptTemplate.trim()) {
-    next.promptTemplate = profile.promptTemplate.trim()
-    changed = true
+  let changed = Object.keys(profile).some(key => !PROFILE_FIELDS.has(key))
+
+  if (profile.reasoningEffort !== undefined) next.reasoningEffort = profile.reasoningEffort
+  if (profile.maxTokens !== undefined) next.maxTokens = profile.maxTokens
+  if (profile.maxDepth !== undefined) next.maxDepth = profile.maxDepth
+  if (profile.backgroundMode !== undefined) next.backgroundMode = profile.backgroundMode
+  if (profile.persona !== undefined) {
+    const persona = profile.persona.trim()
+    if (persona !== profile.persona) changed = true
+    next.persona = persona
+  }
+  if (profile.promptTemplate !== undefined) {
+    const promptTemplate = profile.promptTemplate.trim()
+    if (promptTemplate !== profile.promptTemplate) changed = true
+    next.promptTemplate = promptTemplate
   }
   if (profile.toolFilter !== undefined) {
     const normalizedToolFilter = normalizeToolFilter(profile.toolFilter)
     if (normalizedToolFilter !== undefined) {
       next.toolFilter = normalizedToolFilter
       changed = true
+    } else {
+      next.toolFilter = profile.toolFilter
     }
   }
   return changed ? next : profile
@@ -260,17 +317,24 @@ export class SubagentStore {
   private corrupt = false
 
   private load(): { file: StoreFile; corrupt: boolean } {
-    if (!existsSync(this.path)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: false }
+    if (!existsSync(this.path)) return { file: { version: FORMAT_VERSION, profiles: [], continuableProfiles: {} }, corrupt: false }
     try {
       const parsed: unknown = JSON.parse(readFileSync(this.path, 'utf8'))
-      if (!isRecord(parsed) || !Array.isArray(parsed.profiles) || parsed.version !== FORMAT_VERSION || !parsed.profiles.every(isStoredProfile) || hasDuplicateIds(parsed.profiles as SubagentProfile[])) {
+      if (
+        !isRecord(parsed) ||
+        !Array.isArray(parsed.profiles) ||
+        parsed.version !== FORMAT_VERSION ||
+        !parsed.profiles.every(isStoredProfile) ||
+        hasDuplicateIds(parsed.profiles as SubagentProfile[]) ||
+        (parsed.continuableProfiles !== undefined && !isStoredContinuableProfiles(parsed.continuableProfiles))
+      ) {
         console.warn('[dsh-subagents] profile store contains invalid profile entries; refusing to overwrite ' + this.path)
-        return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
+        return { file: { version: FORMAT_VERSION, profiles: [], continuableProfiles: {} }, corrupt: true }
       }
       return { file: parsed as unknown as StoreFile, corrupt: false }
     } catch (error) {
       console.warn('[dsh-subagents] profile store unreadable, starting empty:', error)
-      return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
+      return { file: { version: FORMAT_VERSION, profiles: [], continuableProfiles: {} }, corrupt: true }
     }
   }
 
@@ -292,6 +356,7 @@ export class SubagentStore {
   private read(): StoreFile {
     const { file, corrupt } = this.load()
     this.corrupt = corrupt
+    file.continuableProfiles ??= {}
     const builtins = builtinProfiles()
     let changed = false
     for (const builtin of builtins) {
@@ -327,6 +392,21 @@ export class SubagentStore {
 
   find(id: string): SubagentProfile | undefined {
     return this.read().profiles.find(profile => profile.id === id)
+  }
+
+  /** Persist the profile used to start a continuable child so cold resumes can inject effort. */
+  recordContinuableProfile(childSessionId: string, profileId: string): void {
+    if (childSessionId === '' || profileId === '') throw new StoreClientError('childSessionId and profileId must be non-empty')
+    const file = this.read()
+    this.assertWritable()
+    file.continuableProfiles ??= {}
+    file.continuableProfiles[childSessionId] = profileId
+    this.save(file)
+  }
+
+  /** Resolve the profile id associated with a (possibly resumed) continuable child. */
+  resolveContinuableProfile(childSessionId: string): string | undefined {
+    return this.read().continuableProfiles?.[childSessionId]
   }
 
   create(payload: SubagentProfilePayload): SubagentProfile {
@@ -371,6 +451,7 @@ export class SubagentStore {
     const profile = file.profiles.find(entry => entry.id === id)
     if (profile === undefined) throw new StoreClientError('profile not found: ' + id)
     if (Object.keys(normalizedPatch).length === 0) return profile
+    if (Object.keys(normalizedPatch).every(key => sameProfileField(profile, key, (normalizedPatch as Record<string, unknown>)[key]))) return profile
     this.assertWritable()
     const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = normalizedPatch
     Object.assign(profile, rest)

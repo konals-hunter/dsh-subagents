@@ -2,16 +2,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { SubagentStore, makeRoutes, makeSubagentProfileTool, installEffortInjection, apply } from '../src/index.ts'
 
 vi.mock('../src/store.ts', () => {
+  const listeners = new Set<() => void>()
   class SubagentStore {
     restoreBuiltins() {
       return []
     }
 
-    subscribe() {
-      return () => {}
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     }
 
     enabledIds() {
+      // Simulate a store notification that can happen while syncTool is
+      // building the tool (e.g. first-read builtin merge/normalization).
+      for (const listener of [...listeners]) listener()
       return ['explore']
     }
 
@@ -57,5 +62,22 @@ describe('host wiring', () => {
     expect(registerRoute).toHaveBeenCalledTimes(2)
     expect(registerTool).toHaveBeenCalled()
     expect(on).toHaveBeenCalledWith('agent/request', expect.any(Function))
+  })
+
+  it('does not re-enter syncTool when tool creation notifies the store', () => {
+    const registerTool = vi.fn(() => () => {})
+    const registerRoute = vi.fn(() => () => {})
+    const on = vi.fn(() => () => {})
+    const effect = vi.fn((callback: () => () => void) => callback())
+    const ctx = {
+      effect,
+      tools: { register: registerTool },
+      webServer: { register: registerRoute },
+      on,
+    } as never
+
+    apply(ctx as never)
+
+    expect(registerTool).toHaveBeenCalledTimes(1)
   })
 })

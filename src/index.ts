@@ -31,9 +31,16 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => {
     let disposeTool: (() => void) | undefined
+    let syncing = false
     const syncTool = (): void => {
-      if (disposeTool !== undefined) { disposeTool(); disposeTool = undefined }
-      disposeTool = ctx.tools.register(makeSubagentProfileTool({ store, ctx }))
+      if (syncing) return
+      syncing = true
+      try {
+        if (disposeTool !== undefined) { disposeTool(); disposeTool = undefined }
+        disposeTool = ctx.tools.register(makeSubagentProfileTool({ store, ctx }))
+      } finally {
+        syncing = false
+      }
     }
     const disposers = routes.map(route => ctx.webServer.register(route))
     const disposeEffort = installEffortInjection(ctx, store)

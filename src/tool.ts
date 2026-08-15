@@ -187,6 +187,8 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
           },
           signal: exec.signal,
         })
+        if (profile === undefined) throw new Error('continuable profile requires a profile')
+        store.recordContinuableProfile(started.childId, profile.id)
         return { kind: 'continuable' as const, subagentId: started.childId }
       }
 

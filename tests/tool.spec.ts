@@ -27,11 +27,12 @@ const profile: SubagentProfile = {
   updatedAt: 1,
 }
 
-function fakeStore(profiles: SubagentProfile[]): SubagentStore {
+function fakeStore(profiles: SubagentProfile[]): SubagentStore & { recordContinuableProfile: ReturnType<typeof vi.fn> } {
   return {
     enabledIds: () => profiles.filter(item => item.enabled).map(item => item.id),
     find: (id: string) => profiles.find(item => item.id === id),
-  } as unknown as SubagentStore
+    recordContinuableProfile: vi.fn(),
+  } as unknown as SubagentStore & { recordContinuableProfile: ReturnType<typeof vi.fn> }
 }
 
 function fakeCtx(overrides: {
@@ -189,6 +190,19 @@ describe('subagent profile tool execute', () => {
       label: 'Explore',
       request: expect.objectContaining({ prompt: expect.any(Array), parent: expect.anything() }),
     }))
+    expect(result).toEqual({ kind: 'continuable', subagentId: 'child-1' })
+  })
+
+  it('records the continuable child profile id for cold-resume effort injection', async () => {
+    const continuable = { ...profile, id: 'cont', backgroundMode: 'continuable' as const }
+    const startContinuable = vi.fn(async () => ({ childId: 'child-1' }))
+    const store = fakeStore([continuable])
+    const ctx = fakeCtx({ startContinuable })
+    const tool = makeSubagentProfileTool({ store, ctx })
+
+    const result = await tool.execute({ profile: 'cont', prompt: 'Keep going' }, fakeExec())
+
+    expect(store.recordContinuableProfile).toHaveBeenCalledWith('child-1', 'cont')
     expect(result).toEqual({ kind: 'continuable', subagentId: 'child-1' })
   })
 

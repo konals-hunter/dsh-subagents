@@ -34,8 +34,9 @@ export function installEffortInjection(ctx: Context, store: SubagentStore): () =
   return ctx.on('agent/request', async ({ agent }, next) => {
     const resolved = await next()
     const agentOptions = agent.options as SubagentProfileAgentOptions | undefined
-    if (agentOptions?.subagentProfileId === undefined) return resolved
-    const profile = store.find(agentOptions.subagentProfileId)
-    return applyProfileEffort(resolved, agentOptions, profile)
+    const subagentProfileId = agentOptions?.subagentProfileId ?? store.resolveContinuableProfile(agent.id)
+    if (subagentProfileId === undefined) return resolved
+    const profile = store.find(subagentProfileId)
+    return applyProfileEffort(resolved, { subagentProfileId }, profile)
   })
 }

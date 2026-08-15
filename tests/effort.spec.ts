@@ -68,7 +68,10 @@ describe('installEffortInjection', () => {
         return () => {}
       }),
     }
-    const store = { find: vi.fn() } as unknown as SubagentStore
+    const store = {
+      find: vi.fn(),
+      resolveContinuableProfile: vi.fn(() => undefined),
+    } as unknown as SubagentStore
 
     installEffortInjection(ctx as never, store)
     const listener = listeners[0]
@@ -79,6 +82,34 @@ describe('installEffortInjection', () => {
     expect(store.find).not.toHaveBeenCalled()
   })
 
+  it('injects reasoningEffort for resumed continuable children via the store map', async () => {
+    const listeners: Array<(args: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = []
+    const ctx = {
+      on: vi.fn((_event: string, listener: typeof listeners[number]) => {
+        listeners.push(listener)
+        return () => {}
+      }),
+    }
+    const store = {
+      find: vi.fn((id: string) => id === 'explore' ? profile : undefined),
+      resolveContinuableProfile: vi.fn((childSessionId: string) => childSessionId === 'child-1' ? 'explore' : undefined),
+    } as unknown as SubagentStore
+
+    installEffortInjection(ctx as never, store)
+    const listener = listeners[0]
+    const next = vi.fn(async () => ({ provider: 'jiyuan', model: 'deepseek-v4-flash-0731' }))
+    const resolved = await listener({
+      agent: {
+        id: 'child-1',
+        options: { provider: 'jiyuan', model: 'deepseek-v4-flash-0731' },
+      },
+    }, next)
+
+    expect(resolved).toMatchObject({ provider: 'jiyuan', model: 'deepseek-v4-flash-0731', reasoningEffort: 'high' })
+    expect(store.resolveContinuableProfile).toHaveBeenCalledWith('child-1')
+    expect(store.find).toHaveBeenCalledWith('explore')
+  })
+
   it('leaves non-profile requests untouched', async () => {
     const listeners: Array<(args: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = []
     const ctx = {
@@ -87,7 +118,10 @@ describe('installEffortInjection', () => {
         return () => {}
       }),
     }
-    const store = { find: vi.fn() } as unknown as SubagentStore
+    const store = {
+      find: vi.fn(),
+      resolveContinuableProfile: vi.fn(() => undefined),
+    } as unknown as SubagentStore
 
     installEffortInjection(ctx as never, store)
     const listener = listeners[0]
