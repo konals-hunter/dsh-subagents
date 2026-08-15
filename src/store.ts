@@ -40,7 +40,27 @@ function isStoredProfile(value: unknown): value is SubagentProfile {
   if (typeof value.modelProvider !== 'string' || typeof value.model !== 'string') return false
   if (typeof value.enabled !== 'boolean' || typeof value.builtin !== 'boolean') return false
   if (typeof value.createdAt !== 'number' || typeof value.updatedAt !== 'number') return false
+  if (value.backgroundMode !== undefined && value.backgroundMode !== 'one-shot' && value.backgroundMode !== 'continuable') return false
+  try {
+    if (value.reasoningEffort !== undefined && parseReasoningEffort(value.reasoningEffort) === undefined) return false
+    if (value.maxTokens !== undefined && parseOptionalNumber(value.maxTokens, 'maxTokens') === undefined) return false
+    if (value.maxDepth !== undefined && parseOptionalNumber(value.maxDepth, 'maxDepth') === undefined) return false
+    if (value.persona !== undefined && parseOptionalString(value.persona, 'persona') === undefined) return false
+    if (value.promptTemplate !== undefined && parseOptionalString(value.promptTemplate, 'promptTemplate') === undefined) return false
+    if (value.toolFilter !== undefined && parseToolFilter(value.toolFilter) === undefined) return false
+  } catch {
+    return false
+  }
   return true
+}
+
+function hasDuplicateIds(profiles: SubagentProfile[]): boolean {
+  const seen = new Set<string>()
+  for (const profile of profiles) {
+    if (seen.has(profile.id)) return true
+    seen.add(profile.id)
+  }
+  return false
 }
 
 function parseReasoningEffort(value: unknown): ReasoningEffort | undefined {
@@ -183,7 +203,8 @@ export class SubagentStore {
     if (!existsSync(this.path)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: false }
     try {
       const parsed: unknown = JSON.parse(readFileSync(this.path, 'utf8'))
-      if (!isRecord(parsed) || !Array.isArray(parsed.profiles) || !parsed.profiles.every(isStoredProfile)) {
+      if (!isRecord(parsed) || !Array.isArray(parsed.profiles) || !parsed.profiles.every(isStoredProfile) || hasDuplicateIds(parsed.profiles as SubagentProfile[])) {
+        console.warn('[dsh-subagents] profile store contains invalid profile entries; refusing to overwrite ' + this.path)
         return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
       }
       return { file: parsed as unknown as StoreFile, corrupt: false }
@@ -202,6 +223,10 @@ export class SubagentStore {
 
   private assertWritable(): void {
     if (this.corrupt) throw new Error('profile store is corrupt; refusing to overwrite ' + this.path)
+  }
+
+  isCorrupt(): boolean {
+    return this.corrupt
   }
 
   private read(): StoreFile {

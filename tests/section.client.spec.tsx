@@ -40,8 +40,9 @@ const customProfile: SubagentProfile = {
 function renderSection(
   overrides: Partial<SubagentsSectionInjected> = {},
   profiles: SubagentProfile[] = [builtinProfile],
+  corrupt = false,
 ) {
-  const store = createSnapshotStore({ status: 'ready' as const, profiles })
+  const store = createSnapshotStore({ status: 'ready' as const, profiles, corrupt })
   const base: SubagentsSectionInjected = {
     hooks: { subagents: store },
     load: vi.fn(async () => {}),
@@ -79,6 +80,25 @@ function unmountSection(container: HTMLDivElement, root: ReturnType<typeof creat
   container.remove()
 }
 
+function changeField(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, value: string): void {
+  const prototype = element instanceof HTMLSelectElement
+    ? HTMLSelectElement.prototype
+    : element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  setter?.call(element, value)
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+  element.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function fieldByLabel(container: HTMLDivElement, label: string): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null {
+  const field = [...container.querySelectorAll('label')]
+    .find(labelElement => labelElement.textContent?.includes(label))
+    ?.querySelector('input, select, textarea')
+  return field as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null
+}
+
 describe('SubagentsSection', () => {
   it('renders builtin profiles without a delete action', () => {
     const injected = renderSection()
@@ -86,6 +106,14 @@ describe('SubagentsSection', () => {
 
     expect(container.textContent).toContain('Explore')
     expect(container.textContent).not.toContain('删除')
+    unmountSection(container, root)
+  })
+
+  it('shows a corruption banner when the store is corrupt', () => {
+    const injected = renderSection({}, [builtinProfile], true)
+    const { container, root } = mountSection(injected)
+
+    expect(container.textContent).toContain('配置文件已损坏')
     unmountSection(container, root)
   })
 
@@ -129,6 +157,49 @@ describe('SubagentsSection', () => {
       await act(async () => { saveButton?.click() })
 
       expect(update).toHaveBeenCalledWith('custom-1', expect.objectContaining({ toolFilter: null }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('sends null reasoningEffort, maxTokens and maxDepth when clearing the edit form', async () => {
+    const update = vi.fn(async () => {})
+    const clearingProfile: SubagentProfile = {
+      ...customProfile,
+      id: 'clearing',
+      reasoningEffort: 'high',
+      maxTokens: 123,
+      maxDepth: 4,
+    }
+    const injected = renderSection({ update }, [clearingProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const editButton = [...container.querySelectorAll('button')].find(button => button.textContent === '编辑')
+      expect(editButton).toBeDefined()
+      await act(async () => { editButton?.click() })
+
+      const reasoningEffort = fieldByLabel(container, 'Thinking Variant') as HTMLSelectElement
+      const maxTokens = fieldByLabel(container, '最大输出 Tokens') as HTMLInputElement
+      const maxDepth = fieldByLabel(container, '最大委派深度') as HTMLInputElement
+      expect(reasoningEffort).not.toBeNull()
+      expect(maxTokens).not.toBeNull()
+      expect(maxDepth).not.toBeNull()
+
+      await act(async () => {
+        changeField(reasoningEffort, '')
+        changeField(maxTokens, '')
+        changeField(maxDepth, '')
+      })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+
+      expect(update).toHaveBeenCalledWith('clearing', expect.objectContaining({
+        reasoningEffort: null,
+        maxTokens: null,
+        maxDepth: null,
+      }))
     } finally {
       unmountSection(container, root)
     }

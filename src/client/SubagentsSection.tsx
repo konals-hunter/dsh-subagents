@@ -166,6 +166,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
 
   return (
     <div className={css.section}>
+      {state.corrupt === true && <p className={css.error}>{state.error ?? t('corrupt.banner')}</p>}
       <div className={css.toolbar}>
         <button type="button" className={css.primary} onClick={openNew}>{t('list.add')}</button>
         <button type="button" className={css.secondary} onClick={() => { void handleRestore() }}>{t('list.restore')}</button>

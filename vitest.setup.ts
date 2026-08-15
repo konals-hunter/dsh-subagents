@@ -7,6 +7,8 @@
  */
 import { vi } from 'vitest'
 
+vi.spyOn(console, 'warn').mockImplementation(() => {})
+
 vi.mock('@deepseek-ai/dsh-client-runtime/client', () => ({
   createSnapshotStore: <T>(initial: T) => {
     let snapshot = { ...initial }

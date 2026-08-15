@@ -123,6 +123,69 @@ describe('subagents routes', () => {
     expect((restored.json as { profiles: Array<{ id: string }> }).profiles.map(p => p.id)).toContain('general')
   })
 
+  it('GET returns corrupt flag for a corrupt store', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const malformed = JSON.stringify({
+      version: 1,
+      profiles: [{
+        id: 'broken',
+        name: 'Broken',
+        description: 'x',
+        enabled: true,
+        builtin: false,
+        provider: 'spawn',
+        modelProvider: 'jiyuan',
+        model: 'deepseek-v4-flash-0731',
+        createdAt: 1,
+        updatedAt: 1,
+        persona: 123,
+      }],
+    })
+    writeFileSync(path, malformed, 'utf8')
+    const { routes } = makeRoutes({ store: new SubagentStore(path) })
+    try {
+      const response = await callHandler(routes[0], 'GET')
+      const json = response.json as { profiles: Array<{ id: string }>; corrupt: boolean }
+      expect(response.status).toBe(200)
+      expect(json.corrupt).toBe(true)
+      expect(json.profiles.map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(readFileSync(path, 'utf8')).toBe(malformed)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('restore returns corrupt flag and error for a corrupt store', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const malformed = JSON.stringify({
+      version: 1,
+      profiles: [{
+        id: 'broken',
+        name: 'Broken',
+        description: 'x',
+        enabled: true,
+        builtin: false,
+        provider: 'spawn',
+        modelProvider: 'jiyuan',
+        model: 'deepseek-v4-flash-0731',
+        createdAt: 1,
+        updatedAt: 1,
+        toolFilter: { allow: 'read' },
+      }],
+    })
+    writeFileSync(path, malformed, 'utf8')
+    const { routes } = makeRoutes({ store: new SubagentStore(path) })
+    try {
+      const response = await callHandler(routes[1], 'POST', '/api/dsh-subagents/profiles/restore-builtins')
+      const json = response.json as { profiles: Array<{ id: string }>; corrupt: boolean; error?: string }
+      expect(response.status).toBe(200)
+      expect(json.corrupt).toBe(true)
+      expect(json.error).toContain('corrupt')
+      expect(json.profiles.map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(readFileSync(path, 'utf8')).toBe(malformed)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('rejects invalid payloads with 400', async () => {
     const bad = await request('/api/dsh-subagents/profiles', 'POST', { id: 'x', name: '' })
     expect(bad.status).toBe(400)

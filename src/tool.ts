@@ -176,7 +176,7 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
       if (runInBackground && backgroundMode === 'continuable') {
         const started = await ctx.subagents.startContinuable({
           provider,
-          label: profile?.name ?? 'subagent_profile',
+          label: request.label,
           request: {
             prompt: request.prompt,
             parent: request.parent,
@@ -195,7 +195,7 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
         if (jobs === undefined) throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
         const id = jobs.start({
           kind: 'subagent',
-          label: profile?.name ?? 'subagent_profile',
+          label: request.label,
           owner: parent,
           run: () => {
             const controller = new AbortController()

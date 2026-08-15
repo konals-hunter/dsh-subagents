@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,6 +19,22 @@ function payload(overrides: Partial<SubagentProfilePayload> = {}): SubagentProfi
     provider: 'spawn',
     modelProvider: 'jiyuan',
     model: 'deepseek-v4-flash-0731',
+    ...overrides,
+  }
+}
+
+function storedProfile(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'custom-1',
+    name: 'Custom',
+    description: 'A stored custom subagent',
+    enabled: true,
+    builtin: false,
+    provider: 'spawn',
+    modelProvider: 'jiyuan',
+    model: 'deepseek-v4-flash-0731',
+    createdAt: 1,
+    updatedAt: 1,
     ...overrides,
   }
 }
@@ -169,6 +185,62 @@ describe('SubagentStore', () => {
       expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
       expect(readFileSync(path, 'utf8')).toBe(malformed)
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats valid JSON with malformed optional fields as corrupt', () => {
+    const malformedOptions: Array<Record<string, unknown>> = [
+      { toolFilter: { allow: 'read' } },
+      { persona: 123 },
+      { reasoningEffort: 'ultra' },
+      { reasoningEffort: null },
+      { maxTokens: -1 },
+      { maxTokens: null },
+      { maxDepth: 1.5 },
+      { maxDepth: null },
+      { backgroundMode: 'bad' },
+      { backgroundMode: null },
+    ]
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    try {
+      for (const override of malformedOptions) {
+        const malformed = JSON.stringify({ version: 1, profiles: [storedProfile(override)] })
+        writeFileSync(path, malformed, 'utf8')
+        const store = new SubagentStore(path)
+        expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+        expect(store.isCorrupt()).toBe(true)
+        expect(readFileSync(path, 'utf8')).toBe(malformed)
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats duplicate profile ids as corrupt and leaves the file untouched', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const malformed = JSON.stringify({ version: 1, profiles: [storedProfile({ id: 'dup' }), storedProfile({ id: 'dup' })] })
+    writeFileSync(path, malformed, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(store.isCorrupt()).toBe(true)
+      expect(readFileSync(path, 'utf8')).toBe(malformed)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('warns when valid JSON contains invalid profile entries', () => {
+    const warn = vi.mocked(console.warn)
+    warn.mockClear()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const malformed = JSON.stringify({ version: 1, profiles: [storedProfile({ persona: 123 })] })
+    writeFileSync(path, malformed, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      store.list()
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('invalid profile entries'))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('clears reasoningEffort, maxTokens and maxDepth with null patches', () => {

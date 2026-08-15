@@ -62,7 +62,7 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
         const method = req.method ?? 'GET'
         if (method === 'GET') {
           try {
-            writeJson(res, 200, { profiles: store.list() })
+            writeJson(res, 200, { profiles: store.list(), corrupt: store.isCorrupt() })
           } catch (error) {
             writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
           }
@@ -106,7 +106,10 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
         if (req.method !== 'POST') { writeJson(res, 405, { error: 'method not allowed: ' + (req.method ?? '') }); return }
         try {
           const profiles = store.restoreBuiltins()
-          writeJson(res, 200, { profiles })
+          const corrupt = store.isCorrupt()
+          writeJson(res, 200, corrupt
+            ? { profiles, corrupt: true, error: 'store file is corrupt; manual recovery required' }
+            : { profiles, corrupt: false })
         } catch (error) {
           writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
         }

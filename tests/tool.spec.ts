@@ -169,7 +169,7 @@ describe('subagent profile tool execute', () => {
     expect(ctx.get).toHaveBeenCalledWith('jobs')
     expect(jobStart).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'subagent',
-      label: 'subagent_profile',
+      label: 'Bg',
       owner: expect.anything(),
     }))
     expect(start).not.toHaveBeenCalled()

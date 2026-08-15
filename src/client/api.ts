@@ -6,6 +6,15 @@ import {
   type SubagentProfilePayload,
 } from '../protocol.ts'
 
+export interface ProfilesResponse {
+  profiles: SubagentProfile[]
+  corrupt?: boolean
+}
+
+export interface RestoreBuiltinsResponse extends ProfilesResponse {
+  error?: string
+}
+
 export class SubagentsApiError extends Error {
   constructor(message: string) {
     super(message)
@@ -36,10 +45,9 @@ function query(params: Record<string, string | number | undefined>): string {
 
 /** The browser half's only data entry point. */
 export class SubagentsApi {
-  async listProfiles(): Promise<SubagentProfile[]> {
+  async listProfiles(): Promise<ProfilesResponse> {
     const response = await fetch(SUBAGENTS_API.profiles)
-    const body = await readJson<{ profiles: SubagentProfile[] }>(response)
-    return body.profiles
+    return await readJson<ProfilesResponse>(response)
   }
 
   async createProfile(payload: SubagentProfilePayload): Promise<SubagentProfile> {
@@ -67,9 +75,8 @@ export class SubagentsApi {
     await readJson<{ ok: boolean }>(response)
   }
 
-  async restoreBuiltins(): Promise<SubagentProfile[]> {
+  async restoreBuiltins(): Promise<RestoreBuiltinsResponse> {
     const response = await fetch(SUBAGENTS_API.restoreBuiltins, { method: 'POST' })
-    const body = await readJson<{ profiles: SubagentProfile[] }>(response)
-    return body.profiles
+    return await readJson<RestoreBuiltinsResponse>(response)
   }
 }

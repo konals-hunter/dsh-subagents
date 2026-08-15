@@ -10,6 +10,7 @@ import type { SubagentsApi } from './api.ts'
 export interface SubagentsSectionState {
   status: 'loading' | 'ready' | 'error'
   profiles: SubagentProfile[]
+  corrupt?: boolean
   error?: string
 }
 
@@ -24,8 +25,8 @@ export class SubagentsSectionController {
   async load(): Promise<void> {
     this.store.update(draft => { draft.status = 'loading'; draft.error = undefined })
     try {
-      const profiles = await this.api.listProfiles()
-      this.store.set({ status: 'ready', profiles })
+      const result = await this.api.listProfiles()
+      this.store.set({ status: 'ready', profiles: result.profiles, corrupt: result.corrupt })
     } catch (error) {
       this.store.set({ status: 'error', profiles: [], error: error instanceof Error ? error.message : String(error) })
     }
@@ -52,7 +53,7 @@ export class SubagentsSectionController {
   }
 
   async restoreBuiltins(): Promise<void> {
-    const profiles = await this.api.restoreBuiltins()
-    this.store.set({ status: 'ready', profiles })
+    const result = await this.api.restoreBuiltins()
+    this.store.set({ status: 'ready', profiles: result.profiles, corrupt: result.corrupt, error: result.error })
   }
 }

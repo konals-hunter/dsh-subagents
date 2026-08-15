@@ -18,11 +18,20 @@ const profile: SubagentProfile = {
 
 describe('SubagentsSectionController', () => {
   it('loads profiles into the store', async () => {
-    const api = { listProfiles: async () => [profile] } as never
+    const api = { listProfiles: async () => ({ profiles: [profile], corrupt: false }) } as never
     const controller = new SubagentsSectionController(api as never)
     await controller.load()
     expect(controller.store.getSnapshot().status).toBe('ready')
     expect(controller.store.getSnapshot().profiles[0].id).toBe('explore')
+    expect(controller.store.getSnapshot().corrupt).toBe(false)
+  })
+
+  it('loads corrupt flag into the store', async () => {
+    const api = { listProfiles: async () => ({ profiles: [profile], corrupt: true }) } as never
+    const controller = new SubagentsSectionController(api as never)
+    await controller.load()
+    expect(controller.store.getSnapshot().status).toBe('ready')
+    expect(controller.store.getSnapshot().corrupt).toBe(true)
   })
 
   it('reports load errors', async () => {
@@ -45,5 +54,20 @@ describe('SubagentsSectionController', () => {
     const controller = new SubagentsSectionController({ updateProfile } as never)
     await controller.update('explore', { reasoningEffort: null, maxTokens: null, maxDepth: null })
     expect(updateProfile).toHaveBeenCalledWith('explore', { reasoningEffort: null, maxTokens: null, maxDepth: null })
+  })
+
+  it('restores builtins and surfaces corrupt recovery error', async () => {
+    const api = {
+      restoreBuiltins: async () => ({
+        profiles: [profile],
+        corrupt: true,
+        error: 'store file is corrupt; manual recovery required',
+      }),
+    } as never
+    const controller = new SubagentsSectionController(api as never)
+    await controller.restoreBuiltins()
+    expect(controller.store.getSnapshot().status).toBe('ready')
+    expect(controller.store.getSnapshot().corrupt).toBe(true)
+    expect(controller.store.getSnapshot().error).toContain('corrupt')
   })
 })
