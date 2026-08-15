@@ -107,7 +107,7 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
       },
       run_in_background: {
         type: 'boolean',
-        description: 'Whether to run in the background. Defaults to false, or to the profile backgroundMode.',
+        description: 'Whether to run a one-shot profile in the background. Defaults to false; continuable profiles always run as continuable subagents.',
       },
     },
     output: {
@@ -161,7 +161,7 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
       const resolved = resolveProfileRequest(args, profile)
       const provider = profile?.provider ?? 'spawn'
       const backgroundMode = profile?.backgroundMode ?? 'one-shot'
-      const runInBackground = args.run_in_background ?? backgroundMode === 'continuable'
+      const runInBackground = args.run_in_background ?? false
 
       const request = {
         label: profile?.name ?? args.prompt.slice(0, 80),
@@ -173,7 +173,7 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
         ...resolved.maxDepth !== undefined ? { maxDepth: resolved.maxDepth } : {},
       }
 
-      if (runInBackground && backgroundMode === 'continuable') {
+      if (backgroundMode === 'continuable') {
         const started = await ctx.subagents.startContinuable({
           provider,
           label: request.label,

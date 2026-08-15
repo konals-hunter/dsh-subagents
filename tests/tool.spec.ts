@@ -192,6 +192,22 @@ describe('subagent profile tool execute', () => {
     expect(result).toEqual({ kind: 'continuable', subagentId: 'child-1' })
   })
 
+  it('still starts a continuable child when run_in_background is false', async () => {
+    const continuable = { ...profile, id: 'cont', backgroundMode: 'continuable' as const }
+    const startContinuable = vi.fn(async () => ({ childId: 'child-1' }))
+    const ctx = fakeCtx({ startContinuable })
+    const tool = makeSubagentProfileTool({ store: fakeStore([continuable]), ctx })
+
+    const result = await tool.execute({ profile: 'cont', prompt: 'Keep going', run_in_background: false }, fakeExec())
+
+    expect(startContinuable).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'spawn',
+      label: 'Explore',
+      request: expect.objectContaining({ prompt: expect.any(Array), parent: expect.anything() }),
+    }))
+    expect(result).toEqual({ kind: 'continuable', subagentId: 'child-1' })
+  })
+
   it('disposes the foreground run when result rejects', async () => {
     const dispose = vi.fn(async () => {})
     let rejectResult: (error: Error) => void = () => {}

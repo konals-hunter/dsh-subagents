@@ -43,7 +43,11 @@ function isStoredProfile(value: unknown): value is SubagentProfile {
   if (value.provider !== 'spawn' && value.provider !== 'fork') return false
   if (!isStoredNonEmptyString(value.modelProvider) || !isStoredNonEmptyString(value.model)) return false
   if (typeof value.enabled !== 'boolean' || typeof value.builtin !== 'boolean') return false
-  if (typeof value.createdAt !== 'number' || typeof value.updatedAt !== 'number') return false
+  if (value.builtin !== (BUILTIN_IDS as readonly string[]).includes(value.id)) return false
+  if (
+    typeof value.createdAt !== 'number' || !Number.isSafeInteger(value.createdAt) || value.createdAt < 0 ||
+    typeof value.updatedAt !== 'number' || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0
+  ) return false
   if (value.backgroundMode !== undefined && value.backgroundMode !== 'one-shot' && value.backgroundMode !== 'continuable') return false
   try {
     if (value.reasoningEffort !== undefined && parseReasoningEffort(value.reasoningEffort) === undefined) return false
@@ -207,7 +211,7 @@ export class SubagentStore {
     if (!existsSync(this.path)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: false }
     try {
       const parsed: unknown = JSON.parse(readFileSync(this.path, 'utf8'))
-      if (!isRecord(parsed) || !Array.isArray(parsed.profiles) || !parsed.profiles.every(isStoredProfile) || hasDuplicateIds(parsed.profiles as SubagentProfile[])) {
+      if (!isRecord(parsed) || !Array.isArray(parsed.profiles) || parsed.version !== FORMAT_VERSION || !parsed.profiles.every(isStoredProfile) || hasDuplicateIds(parsed.profiles as SubagentProfile[])) {
         console.warn('[dsh-subagents] profile store contains invalid profile entries; refusing to overwrite ' + this.path)
         return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
       }
@@ -291,8 +295,8 @@ export class SubagentStore {
     this.assertWritable()
     const profile = file.profiles.find(entry => entry.id === id)
     if (profile === undefined) throw new Error('profile not found: ' + id)
-    const patchWithImmutable = patch as SubagentProfilePatch & { builtin?: unknown; createdAt?: unknown; updatedAt?: unknown }
-    const { builtin: _builtin, createdAt: _createdAt, updatedAt: _updatedAt, ...editable } = patchWithImmutable
+    const patchWithImmutable = patch as SubagentProfilePatch & { id?: unknown; builtin?: unknown; createdAt?: unknown; updatedAt?: unknown }
+    const { id: _id, builtin: _builtin, createdAt: _createdAt, updatedAt: _updatedAt, ...editable } = patchWithImmutable
     const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = editable
     Object.assign(profile, rest)
     if (Object.prototype.hasOwnProperty.call(patch, 'toolFilter')) {

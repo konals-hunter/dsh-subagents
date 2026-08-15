@@ -113,6 +113,22 @@ describe('SubagentsSection', () => {
     unmountSection(container, root)
   })
 
+  it('prefills the new profile form with the next free custom id', async () => {
+    const injected = renderSection({}, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增 Subagent')
+      expect(addButton).toBeDefined()
+      await act(async () => { addButton?.click() })
+
+      const idField = fieldByLabel(container, 'ID')
+      expect(idField).not.toBeNull()
+      expect((idField as HTMLInputElement).value).toBe('custom-2')
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
   it('shows a corruption banner when the store is corrupt', () => {
     const injected = renderSection({}, [builtinProfile], true)
     const { container, root } = mountSection(injected)

@@ -46,6 +46,14 @@ function blankDraft(): Draft {
   }
 }
 
+/** Pick the lowest free custom-<n> id not already used by current profiles. */
+export function nextCustomProfileId(profiles: SubagentProfile[]): string {
+  const ids = new Set(profiles.map(profile => profile.id))
+  let n = 1
+  while (ids.has('custom-' + n)) n++
+  return 'custom-' + n
+}
+
 function toDraft(profile: SubagentProfile): Draft {
   return {
     id: profile.id,
@@ -102,7 +110,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
 
   const openNew = (): void => {
     setEditing({ mode: 'new' })
-    setDraft(blankDraft())
+    setDraft({ ...blankDraft(), id: nextCustomProfileId(state.profiles) })
     setError(null)
   }
   const openEdit = (profile: SubagentProfile): void => {

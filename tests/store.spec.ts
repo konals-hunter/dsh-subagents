@@ -199,6 +199,12 @@ describe('SubagentStore', () => {
       { maxDepth: null },
       { backgroundMode: 'bad' },
       { backgroundMode: null },
+      { createdAt: -1 },
+      { updatedAt: -1 },
+      { createdAt: 1.5 },
+      { updatedAt: 1.5 },
+      { createdAt: Number.MAX_SAFE_INTEGER + 1 },
+      { updatedAt: Number.MAX_SAFE_INTEGER + 1 },
     ]
     const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
     const path = join(dir, 'store.json')
@@ -237,6 +243,53 @@ describe('SubagentStore', () => {
         expect(store.isCorrupt()).toBe(true)
         expect(readFileSync(path, 'utf8')).toBe(malformed)
       }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('preserves id when a direct update patch tries to rename a profile', () => {
+    const { store, dir } = tempStore()
+    try {
+      const before = store.find('explore')
+      expect(before).toBeDefined()
+      const updated = store.update('explore', { id: 'renamed' } as never)
+      expect(updated.id).toBe('explore')
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<{ id: string }>
+      }
+      expect(raw.profiles.find(entry => entry.id === 'explore')?.id).toBe('explore')
+      expect(raw.profiles.some(entry => entry.id === 'renamed')).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats builtin flag mismatches as corrupt and leaves the file untouched', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const mismatches: Array<Record<string, unknown>> = [
+      storedProfile({ id: 'explore', builtin: false }),
+      storedProfile({ id: 'custom-other', builtin: true }),
+    ]
+    try {
+      for (const override of mismatches) {
+        const malformed = JSON.stringify({ version: 1, profiles: [storedProfile(override)] })
+        writeFileSync(path, malformed, 'utf8')
+        const store = new SubagentStore(path)
+        expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+        expect(store.isCorrupt()).toBe(true)
+        expect(readFileSync(path, 'utf8')).toBe(malformed)
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats an unsupported store file version as corrupt and leaves the file untouched', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const malformed = JSON.stringify({ version: 2, profiles: [storedProfile()] })
+    writeFileSync(path, malformed, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(store.isCorrupt()).toBe(true)
+      expect(readFileSync(path, 'utf8')).toBe(malformed)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
