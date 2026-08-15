@@ -5,7 +5,6 @@
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, dirname, resolve as resolvePath, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
@@ -20,7 +19,6 @@ const PLATFORM_MODULES = [
 
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
-const REPOSITORY_ROOT = fileURLToPath(new URL('.', import.meta.url))
 
 const cssModulesPlugin = {
   name: 'dsh-css-modules-inline',

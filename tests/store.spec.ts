@@ -75,7 +75,8 @@ describe('SubagentStore', () => {
       const unsubscribe = store.subscribe(() => events.push(store.list().length))
       const created = store.create(payload({ id: 'custom-a' }))
       expect(created.id).toBe('custom-a')
-      expect(events).toEqual([4])
+      // The first read seeds/merges builtins and notifies before the create itself notifies.
+      expect(events).toEqual([3, 4])
       const updated = store.update(created.id, { model: 'deepseek-v4-pro' })
       expect(updated.model).toBe('deepseek-v4-pro')
       expect(updated.builtin).toBe(false)
@@ -493,6 +494,67 @@ describe('SubagentStore', () => {
       expect(stored?.promptTemplate).toBe('template')
       expect(stored?.toolFilter).toEqual({ allow: ['read', 'write'], deny: ['edit'] })
       expect(raw.profiles.find(entry => entry.id === 'custom-opt2')?.toolFilter).toEqual({ deny: ['edit'] })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('clamps updatedAt when system clock moves backwards and keeps store writable', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2_000))
+      const { store, dir } = tempStore()
+      try {
+        const created = store.create(payload({ id: 'clock-skew' }))
+        expect(created.createdAt).toBe(2_000)
+        expect(created.updatedAt).toBe(2_000)
+
+        vi.setSystemTime(new Date(1_000))
+        const updated = store.update(created.id, { name: 'After clock skew' })
+        expect(updated.updatedAt).toBe(2_000)
+        expect(updated.updatedAt).toBeGreaterThanOrEqual(updated.createdAt)
+
+        const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+          profiles: Array<{ id: string; createdAt: number; updatedAt: number }>
+        }
+        const stored = raw.profiles.find(entry => entry.id === 'clock-skew')
+        expect(stored?.updatedAt).toBeGreaterThanOrEqual(stored?.createdAt ?? 0)
+
+        // A subsequent read must not mark the store corrupt.
+        expect(store.find('clock-skew')).toBeDefined()
+        expect(store.isCorrupt()).toBe(false)
+
+        // The store remains writable after a backward-clock update.
+        expect(() => store.update(created.id, { name: 'Still writable' })).not.toThrow()
+        expect(store.isCorrupt()).toBe(false)
+      } finally { rmSync(dir, { recursive: true, force: true }) }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('notifies subscribers when read merges builtins or normalizes stored profiles', () => {
+    const { store, dir } = tempStore()
+    try {
+      const events: string[] = []
+      store.subscribe(() => events.push('change'))
+
+      store.list()
+      expect(events).toEqual(['change'])
+
+      events.length = 0
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<Record<string, unknown>>
+      }
+      raw.profiles.push(storedProfile({
+        id: 'normalize-notify',
+        persona: '  padded  ',
+        promptTemplate: '  template  ',
+      }))
+      writeFileSync(store.path, JSON.stringify(raw, null, 2), 'utf8')
+
+      const loaded = store.find('normalize-notify')
+      expect(loaded?.persona).toBe('padded')
+      expect(loaded?.promptTemplate).toBe('template')
+      expect(events).toEqual(['change'])
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

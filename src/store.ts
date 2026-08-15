@@ -297,7 +297,10 @@ export class SubagentStore {
       file.profiles = normalizedProfiles
       changed = true
     }
-    if (changed && !corrupt) this.save(file)
+    if (changed && !corrupt) {
+      this.save(file)
+      this.notify()
+    }
     return file
   }
 
@@ -340,6 +343,15 @@ export class SubagentStore {
     return profile
   }
 
+  /**
+   * Apply a partial update to a profile.
+   *
+   * Immutable fields (`id`, `builtin`, `createdAt`, `updatedAt`) supplied through
+   * the direct store API are deliberately stripped before validation, so direct
+   * callers cannot change them. The store always advances `updatedAt` itself and
+   * clamps it to the profile's existing timestamps so a backwards system clock
+   * cannot make the store invalid.
+   */
   update(id: string, patch: SubagentProfilePatch): SubagentProfile {
     const editable = { ...patch } as Record<string, unknown>
     delete editable.id
@@ -365,7 +377,7 @@ export class SubagentStore {
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'maxDepth')) {
       profile.maxDepth = maxDepth ?? undefined
     }
-    profile.updatedAt = Date.now()
+    profile.updatedAt = Math.max(Date.now(), profile.createdAt, profile.updatedAt)
     this.save(file)
     this.notify()
     return profile
