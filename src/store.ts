@@ -29,7 +29,7 @@ interface StoreFile {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isStoredNonEmptyString(value: unknown): value is string {
@@ -395,10 +395,9 @@ export class SubagentStore {
   }
 
   restoreBuiltins(): SubagentProfile[] {
-    const file = this.read()
-    if (!this.corrupt) this.save(file)
-    this.notify()
-    return file.profiles
+    // read() already saves and notifies only when builtins were merged or stored
+    // profiles normalized; corrupt stores remain untouched.
+    return this.read().profiles
   }
 
   /** Exposed for the tool schema: only enabled profiles are delegatable. */

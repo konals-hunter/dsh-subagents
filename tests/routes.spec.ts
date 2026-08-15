@@ -3,6 +3,7 @@ import { createServer, request as httpRequest, type Server } from 'node:http'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { SubagentStore } from '../src/store.ts'
 import { makeRoutes } from '../src/routes.ts'
 
@@ -189,6 +190,43 @@ describe('subagents routes', () => {
   it('rejects invalid payloads with 400', async () => {
     const bad = await request('/api/dsh-subagents/profiles', 'POST', { id: 'x', name: '' })
     expect(bad.status).toBe(400)
+  })
+
+  it('rejects JSON array bodies for PUT with 400', async () => {
+    const response = await request('/api/dsh-subagents/profiles?id=explore', 'PUT', [])
+    expect(response.status).toBe(400)
+    expect((response.json as { error: string }).error).toMatch(/invalid JSON body|JSON object/)
+  })
+
+  it('returns 400 JSON when the request body stream is destroyed mid-read', async () => {
+    let status = 0
+    let body = ''
+    const res = {
+      writeHead(code: number) {
+        status = code
+        return res
+      },
+      end(data?: unknown) {
+        body = String(data ?? '')
+        return res
+      },
+    }
+    const bodyStream = new Readable({
+      read() {
+        this.push(Buffer.from('{"name":'))
+        this.destroy(new Error('stream destroyed'))
+      },
+    })
+    const req = {
+      method: 'PUT',
+      url: '/api/dsh-subagents/profiles?id=explore',
+      headers: { host: '127.0.0.1' },
+      socket: { remoteAddress: '127.0.0.1' },
+      [Symbol.asyncIterator]: bodyStream[Symbol.asyncIterator].bind(bodyStream),
+    }
+    await routes[0].handler(req as never, res as never)
+    expect(status).toBe(400)
+    expect(JSON.parse(body) as { error: string }).toMatchObject({ error: expect.stringContaining('invalid JSON body') })
   })
 
   it('rejects non-loopback Host headers with 403', async () => {

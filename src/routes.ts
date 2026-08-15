@@ -32,14 +32,19 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
 async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown> | undefined> {
   const chunks: Buffer[] = []
   let size = 0
-  for await (const chunk of req) {
-    const buffer = chunk as Buffer
-    size += buffer.length
-    if (size > MAX_JSON_BODY_BYTES) return undefined
-    chunks.push(buffer)
+  try {
+    for await (const chunk of req) {
+      const buffer = chunk as Buffer
+      size += buffer.length
+      if (size > MAX_JSON_BODY_BYTES) return undefined
+      chunks.push(buffer)
+    }
+  } catch {
+    return undefined
   }
   try {
     const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if (Array.isArray(parsed)) return undefined
     return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : undefined
   } catch { return undefined }
 }

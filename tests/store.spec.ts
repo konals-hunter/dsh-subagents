@@ -557,4 +557,20 @@ describe('SubagentStore', () => {
       expect(events).toEqual(['change'])
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
+
+  it('restoreBuiltins does not save or notify when nothing changed', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.list()
+      const events: string[] = []
+      store.subscribe(() => events.push('change'))
+      const before = readFileSync(store.path, 'utf8')
+
+      const restored = store.restoreBuiltins()
+
+      expect(restored.map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(events).toEqual([])
+      expect(readFileSync(store.path, 'utf8')).toBe(before)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
 })
