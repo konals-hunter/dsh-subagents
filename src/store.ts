@@ -32,6 +32,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function isStoredProfile(value: unknown): value is SubagentProfile {
+  if (!isRecord(value)) return false
+  if (typeof value.id !== 'string' || value.id === '') return false
+  if (typeof value.name !== 'string' || typeof value.description !== 'string') return false
+  if (value.provider !== 'spawn' && value.provider !== 'fork') return false
+  if (typeof value.modelProvider !== 'string' || typeof value.model !== 'string') return false
+  if (typeof value.enabled !== 'boolean' || typeof value.builtin !== 'boolean') return false
+  if (typeof value.createdAt !== 'number' || typeof value.updatedAt !== 'number') return false
+  return true
+}
+
 function parseReasoningEffort(value: unknown): ReasoningEffort | undefined {
   if (value === undefined || value === null) return undefined
   if (value === 'off' || value === 'low' || value === 'medium' || value === 'high' || value === 'max') return value
@@ -171,9 +182,11 @@ export class SubagentStore {
   private load(): { file: StoreFile; corrupt: boolean } {
     if (!existsSync(this.path)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: false }
     try {
-      const parsed = JSON.parse(readFileSync(this.path, 'utf8')) as StoreFile
-      if (!Array.isArray(parsed.profiles)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
-      return { file: parsed, corrupt: false }
+      const parsed: unknown = JSON.parse(readFileSync(this.path, 'utf8'))
+      if (!isRecord(parsed) || !Array.isArray(parsed.profiles) || !parsed.profiles.every(isStoredProfile)) {
+        return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
+      }
+      return { file: parsed as unknown as StoreFile, corrupt: false }
     } catch (error) {
       console.warn('[dsh-subagents] profile store unreadable, starting empty:', error)
       return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
@@ -185,6 +198,10 @@ export class SubagentStore {
     const tmp = this.path + '.tmp'
     writeFileSync(tmp, JSON.stringify(file, null, 2), { mode: 0o600 })
     renameSync(tmp, this.path)
+  }
+
+  private assertWritable(): void {
+    if (this.corrupt) throw new Error('profile store is corrupt; refusing to overwrite ' + this.path)
   }
 
   private read(): StoreFile {
@@ -221,10 +238,14 @@ export class SubagentStore {
 
   create(payload: SubagentProfilePayload): SubagentProfile {
     const file = this.read()
+    this.assertWritable()
     if (file.profiles.some(profile => profile.id === payload.id)) throw new Error('id already exists: ' + payload.id)
     const now = Date.now()
     const profile: SubagentProfile = {
       ...payload,
+      reasoningEffort: payload.reasoningEffort ?? undefined,
+      maxTokens: payload.maxTokens ?? undefined,
+      maxDepth: payload.maxDepth ?? undefined,
       toolFilter: payload.toolFilter ?? undefined,
       builtin: false,
       createdAt: now,
@@ -238,12 +259,22 @@ export class SubagentStore {
 
   update(id: string, patch: SubagentProfilePatch): SubagentProfile {
     const file = this.read()
+    this.assertWritable()
     const profile = file.profiles.find(entry => entry.id === id)
     if (profile === undefined) throw new Error('profile not found: ' + id)
-    const { toolFilter, ...rest } = patch
+    const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = patch
     Object.assign(profile, rest)
     if (Object.prototype.hasOwnProperty.call(patch, 'toolFilter')) {
       profile.toolFilter = toolFilter ?? undefined
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'reasoningEffort')) {
+      profile.reasoningEffort = reasoningEffort ?? undefined
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'maxTokens')) {
+      profile.maxTokens = maxTokens ?? undefined
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'maxDepth')) {
+      profile.maxDepth = maxDepth ?? undefined
     }
     profile.updatedAt = Date.now()
     this.save(file)
@@ -253,6 +284,7 @@ export class SubagentStore {
 
   delete(id: string): void {
     const file = this.read()
+    this.assertWritable()
     const index = file.profiles.findIndex(profile => profile.id === id)
     if (index < 0) throw new Error('profile not found: ' + id)
     if (file.profiles[index].builtin) throw new Error('builtin profile cannot be deleted')

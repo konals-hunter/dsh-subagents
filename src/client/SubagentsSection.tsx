@@ -242,7 +242,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           </label>
           <label className={css.field}>
             <span>{t('form.reasoningEffort')}</span>
-            <select value={draft.reasoningEffort ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, reasoningEffort: event.target.value === '' ? undefined : event.target.value as SubagentProfilePayload['reasoningEffort'] })}>
+            <select value={draft.reasoningEffort ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, reasoningEffort: event.target.value === '' ? null : event.target.value as SubagentProfilePayload['reasoningEffort'] })}>
               <option value="">{t('form.reasoningEffort.none')}</option>
               <option value="off">off</option>
               <option value="low">low</option>
@@ -253,11 +253,11 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           </label>
           <label className={css.field}>
             <span>{t('form.maxTokens')}</span>
-            <input type="number" value={draft.maxTokens ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, maxTokens: event.target.value === '' ? undefined : Number(event.target.value) })} />
+            <input type="number" value={draft.maxTokens ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, maxTokens: event.target.value === '' ? null : Number(event.target.value) })} />
           </label>
           <label className={css.field}>
             <span>{t('form.maxDepth')}</span>
-            <input type="number" value={draft.maxDepth ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, maxDepth: event.target.value === '' ? undefined : Number(event.target.value) })} />
+            <input type="number" value={draft.maxDepth ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, maxDepth: event.target.value === '' ? null : Number(event.target.value) })} />
           </label>
           <label className={css.field}>
             <span>{t('form.persona')}</span>

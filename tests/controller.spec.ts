@@ -39,4 +39,11 @@ describe('SubagentsSectionController', () => {
     await controller.update('explore', { toolFilter: null })
     expect(updateProfile).toHaveBeenCalledWith('explore', { toolFilter: null })
   })
+
+  it('passes null through to the API when clearing optional profile fields', async () => {
+    const updateProfile = vi.fn(async () => profile)
+    const controller = new SubagentsSectionController({ updateProfile } as never)
+    await controller.update('explore', { reasoningEffort: null, maxTokens: null, maxDepth: null })
+    expect(updateProfile).toHaveBeenCalledWith('explore', { reasoningEffort: null, maxTokens: null, maxDepth: null })
+  })
 })

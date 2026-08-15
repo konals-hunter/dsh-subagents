@@ -42,9 +42,9 @@ export interface SubagentProfilePayload {
   provider: SubagentProviderName
   modelProvider: string
   model: string
-  reasoningEffort?: ReasoningEffort
-  maxTokens?: number
-  maxDepth?: number
+  reasoningEffort?: ReasoningEffort | null
+  maxTokens?: number | null
+  maxDepth?: number | null
   persona?: string
   promptTemplate?: string
   toolFilter?: ToolFilter | null

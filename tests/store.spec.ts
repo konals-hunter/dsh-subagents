@@ -133,6 +133,70 @@ describe('SubagentStore', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('refuses to overwrite a corrupt store file on create/update/delete', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const corrupt = '{ this is not valid json'
+    writeFileSync(path, corrupt, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(() => store.create(payload())).toThrow(/corrupt/)
+      expect(() => store.update('explore', { name: 'Renamed' })).toThrow(/corrupt/)
+      expect(() => store.delete('explore')).toThrow(/corrupt/)
+      expect(readFileSync(path, 'utf8')).toBe(corrupt)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats a profiles array containing null as corrupt and leaves the file untouched', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const malformed = JSON.stringify({ version: 1, profiles: [null] })
+    writeFileSync(path, malformed, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(readFileSync(path, 'utf8')).toBe(malformed)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats a profiles entry missing id as corrupt and leaves the file untouched', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const malformed = JSON.stringify({ version: 1, profiles: [{ name: 'No id' }] })
+    writeFileSync(path, malformed, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(readFileSync(path, 'utf8')).toBe(malformed)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('clears reasoningEffort, maxTokens and maxDepth with null patches', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({ id: 'cleared', reasoningEffort: 'high', maxTokens: 123, maxDepth: 4 }))
+      expect(created.reasoningEffort).toBe('high')
+      expect(created.maxTokens).toBe(123)
+      expect(created.maxDepth).toBe(4)
+
+      const updated = store.update('cleared', { reasoningEffort: null, maxTokens: null, maxDepth: null })
+      expect(updated.reasoningEffort).toBeUndefined()
+      expect(updated.maxTokens).toBeUndefined()
+      expect(updated.maxDepth).toBeUndefined()
+
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<{ id: string; reasoningEffort?: unknown; maxTokens?: unknown; maxDepth?: unknown }>
+      }
+      const stored = raw.profiles.find(entry => entry.id === 'cleared')
+      expect(stored?.reasoningEffort).toBeUndefined()
+      expect(stored?.maxTokens).toBeUndefined()
+      expect(stored?.maxDepth).toBeUndefined()
+
+      expect(() => validateProfilePatch({ reasoningEffort: null, maxTokens: null, maxDepth: null })).not.toThrow()
+      expect(validateProfilePayload(payload({ reasoningEffort: null, maxTokens: null, maxDepth: null })).reasoningEffort).toBeUndefined()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('trims tool filter entries and requires boolean enabled', () => {
     const normalized = validateProfilePayload(payload({
       enabled: true,
