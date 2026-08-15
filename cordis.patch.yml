@@ -1,0 +1,6 @@
+# dsh-subagents bundle patch: inserts the plugin row into the web profile
+# roster. The node half runs in the host process; the dsh.client declaration
+# loads the browser half in the web GUI.
+- insert:
+    - id: dsh-subagents
+      name: '@konals/dsh-subagents'
