@@ -214,6 +214,51 @@ describe('SubagentStore', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('treats empty required strings and invalid ids as corrupt', () => {
+    const malformedRequired: Array<Record<string, unknown>> = [
+      { name: '   ' },
+      { name: ' Name ' },
+      { description: '' },
+      { modelProvider: ' ' },
+      { model: '' },
+      { id: 'bad id!' },
+      { id: '-invalid' },
+      { id: ' custom-1 ' },
+      { id: 'x'.repeat(65) },
+    ]
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    try {
+      for (const override of malformedRequired) {
+        const malformed = JSON.stringify({ version: 1, profiles: [storedProfile(override)] })
+        writeFileSync(path, malformed, 'utf8')
+        const store = new SubagentStore(path)
+        expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+        expect(store.isCorrupt()).toBe(true)
+        expect(readFileSync(path, 'utf8')).toBe(malformed)
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('strips immutable fields from direct update patches', () => {
+    const { store, dir } = tempStore()
+    try {
+      const before = store.find('explore')
+      expect(before).toBeDefined()
+      const updated = store.update('explore', { name: 'Renamed Explore', builtin: false, createdAt: 0, updatedAt: 0 } as never)
+      expect(updated.builtin).toBe(true)
+      expect(updated.createdAt).toBe(before?.createdAt)
+      expect(updated.updatedAt).not.toBe(0)
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<{ id: string; builtin: boolean; createdAt: number; updatedAt: number }>
+      }
+      const stored = raw.profiles.find(entry => entry.id === 'explore')
+      expect(stored?.builtin).toBe(true)
+      expect(stored?.createdAt).toBe(before?.createdAt)
+      expect(stored?.updatedAt).toBe(updated.updatedAt)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('treats duplicate profile ids as corrupt and leaves the file untouched', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
     const path = join(dir, 'store.json')

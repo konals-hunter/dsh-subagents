@@ -60,6 +60,25 @@ describe('installEffortInjection', () => {
     expect(dispose).toBeTypeOf('function')
   })
 
+  it('handles agents without options', async () => {
+    const listeners: Array<(args: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = []
+    const ctx = {
+      on: vi.fn((_event: string, listener: typeof listeners[number]) => {
+        listeners.push(listener)
+        return () => {}
+      }),
+    }
+    const store = { find: vi.fn() } as unknown as SubagentStore
+
+    installEffortInjection(ctx as never, store)
+    const listener = listeners[0]
+    const next = vi.fn(async () => ({ provider: 'p', model: 'm' }))
+    const resolved = await listener({ agent: {} }, next)
+
+    expect(resolved).toEqual({ provider: 'p', model: 'm' })
+    expect(store.find).not.toHaveBeenCalled()
+  })
+
   it('leaves non-profile requests untouched', async () => {
     const listeners: Array<(args: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = []
     const ctx = {

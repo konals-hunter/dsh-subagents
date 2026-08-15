@@ -17,10 +17,10 @@ import type { SubagentStore } from './store.ts'
  */
 export function applyProfileEffort<T extends object>(
   resolved: T,
-  agentOptions: Pick<SubagentProfileAgentOptions, 'subagentProfileId'>,
+  agentOptions: Pick<SubagentProfileAgentOptions, 'subagentProfileId'> | undefined,
   profile: SubagentProfile | undefined,
 ): T & { reasoningEffort?: SubagentProfile['reasoningEffort'] } {
-  if (agentOptions.subagentProfileId === undefined || profile?.reasoningEffort === undefined) return resolved
+  if (agentOptions?.subagentProfileId === undefined || profile?.reasoningEffort === undefined) return resolved
   return { ...resolved, reasoningEffort: profile.reasoningEffort }
 }
 
@@ -33,8 +33,8 @@ export function applyProfileEffort<T extends object>(
 export function installEffortInjection(ctx: Context, store: SubagentStore): () => void {
   return ctx.on('agent/request', async ({ agent }, next) => {
     const resolved = await next()
-    const agentOptions = agent.options as SubagentProfileAgentOptions
-    if (agentOptions.subagentProfileId === undefined) return resolved
+    const agentOptions = agent.options as SubagentProfileAgentOptions | undefined
+    if (agentOptions?.subagentProfileId === undefined) return resolved
     const profile = store.find(agentOptions.subagentProfileId)
     return applyProfileEffort(resolved, agentOptions, profile)
   })

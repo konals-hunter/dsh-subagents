@@ -3,12 +3,14 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { createRoot } from 'react-dom/client'
-import { act } from 'react'
+import { act, useSyncExternalStore } from 'react'
 import { SubagentsSection } from '../src/client/SubagentsSection.tsx'
 import type { SubagentsSectionInjected } from '../src/client/SubagentsSection.tsx'
+import { SubagentsSectionController } from '../src/client/controller.ts'
 import { zh } from '../src/client/locales.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubagentProfile } from '../src/protocol.ts'
+import type { SubagentsSectionState } from '../src/client/controller.ts'
 
 const builtinProfile: SubagentProfile = {
   id: 'explore',
@@ -43,6 +45,8 @@ function renderSection(
   corrupt = false,
 ) {
   const store = createSnapshotStore({ status: 'ready' as const, profiles, corrupt })
+  const useSubagents = <T,>(selector: (snapshot: SubagentsSectionState) => T): T =>
+    useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
   const base: SubagentsSectionInjected = {
     hooks: { subagents: store },
     load: vi.fn(async () => {}),
@@ -51,7 +55,7 @@ function renderSection(
     remove: vi.fn(async () => {}),
     restoreBuiltins: vi.fn(async () => {}),
   }
-  return { store, ...base, ...overrides }
+  return { store, useSubagents, ...base, ...overrides }
 }
 
 function mountSection(injected: ReturnType<typeof renderSection>): { container: HTMLDivElement; root: ReturnType<typeof createRoot> } {
@@ -60,7 +64,7 @@ function mountSection(injected: ReturnType<typeof renderSection>): { container: 
   const root = createRoot(container)
   act(() => {
     root.render(<SubagentsSection
-      useSubagents={selector => selector(injected.store.getSnapshot())}
+      useSubagents={injected.useSubagents}
       useSessions={selector => selector({} as never)}
       useWorkspaces={selector => selector({} as never)}
       t={key => (zh as Record<string, string>)[key]}
@@ -115,6 +119,47 @@ describe('SubagentsSection', () => {
 
     expect(container.textContent).toContain('配置文件已损坏')
     unmountSection(container, root)
+  })
+
+  it('clears the corruption banner after a successful create', async () => {
+    const api = {
+      listProfiles: async () => ({ profiles: [builtinProfile], corrupt: true }),
+      createProfile: vi.fn(async () => ({ ...customProfile, id: 'created' })),
+      restoreBuiltins: async () => ({
+        profiles: [builtinProfile],
+        corrupt: true,
+        error: 'store file is corrupt; manual recovery required',
+      }),
+    } as never
+    const controller = new SubagentsSectionController(api as never)
+    await controller.load()
+    const store = controller.store
+    const useSubagents = <T,>(selector: (snapshot: SubagentsSectionState) => T): T =>
+      useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
+    const injected: SubagentsSectionInjected = {
+      hooks: { subagents: store },
+      load: async () => {},
+      create: payload => controller.create(payload),
+      update: (id, patch) => controller.update(id, patch),
+      remove: id => controller.remove(id),
+      restoreBuiltins: () => controller.restoreBuiltins(),
+    }
+    const { container, root } = mountSection({ ...injected, store, useSubagents } as never)
+    try {
+      expect(container.textContent).toContain('配置文件已损坏')
+      const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增 Subagent')
+      expect(addButton).toBeDefined()
+      await act(async () => { addButton?.click() })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+
+      expect(container.textContent).not.toContain('配置文件已损坏')
+      expect(container.textContent).toContain('created')
+    } finally {
+      unmountSection(container, root)
+    }
   })
 
   it('surfaces remove errors', async () => {

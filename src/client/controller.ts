@@ -34,7 +34,11 @@ export class SubagentsSectionController {
 
   async create(payload: SubagentProfilePayload): Promise<void> {
     const profile = await this.api.createProfile(payload)
-    this.store.update(draft => { draft.profiles.push(profile) })
+    this.store.update(draft => {
+      draft.profiles.push(profile)
+      draft.corrupt = false
+      draft.error = undefined
+    })
   }
 
   async update(id: string, patch: SubagentProfilePatch): Promise<void> {
@@ -42,6 +46,8 @@ export class SubagentsSectionController {
     this.store.update(draft => {
       const index = draft.profiles.findIndex(entry => entry.id === id)
       if (index >= 0) draft.profiles[index] = profile
+      draft.corrupt = false
+      draft.error = undefined
     })
   }
 
@@ -49,6 +55,8 @@ export class SubagentsSectionController {
     await this.api.deleteProfile(id)
     this.store.update(draft => {
       draft.profiles = draft.profiles.filter(entry => entry.id !== id)
+      draft.corrupt = false
+      draft.error = undefined
     })
   }
 

@@ -32,12 +32,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function isStoredNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value === value.trim() && value !== ''
+}
+
 function isStoredProfile(value: unknown): value is SubagentProfile {
   if (!isRecord(value)) return false
-  if (typeof value.id !== 'string' || value.id === '') return false
-  if (typeof value.name !== 'string' || typeof value.description !== 'string') return false
+  if (!isStoredNonEmptyString(value.id) || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(value.id)) return false
+  if (!isStoredNonEmptyString(value.name) || !isStoredNonEmptyString(value.description)) return false
   if (value.provider !== 'spawn' && value.provider !== 'fork') return false
-  if (typeof value.modelProvider !== 'string' || typeof value.model !== 'string') return false
+  if (!isStoredNonEmptyString(value.modelProvider) || !isStoredNonEmptyString(value.model)) return false
   if (typeof value.enabled !== 'boolean' || typeof value.builtin !== 'boolean') return false
   if (typeof value.createdAt !== 'number' || typeof value.updatedAt !== 'number') return false
   if (value.backgroundMode !== undefined && value.backgroundMode !== 'one-shot' && value.backgroundMode !== 'continuable') return false
@@ -287,7 +291,9 @@ export class SubagentStore {
     this.assertWritable()
     const profile = file.profiles.find(entry => entry.id === id)
     if (profile === undefined) throw new Error('profile not found: ' + id)
-    const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = patch
+    const patchWithImmutable = patch as SubagentProfilePatch & { builtin?: unknown; createdAt?: unknown; updatedAt?: unknown }
+    const { builtin: _builtin, createdAt: _createdAt, updatedAt: _updatedAt, ...editable } = patchWithImmutable
+    const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = editable
     Object.assign(profile, rest)
     if (Object.prototype.hasOwnProperty.call(patch, 'toolFilter')) {
       profile.toolFilter = toolFilter ?? undefined
