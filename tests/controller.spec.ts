@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SubagentsSectionController } from '../src/client/controller.ts'
 import type { SubagentProfile } from '../src/protocol.ts'
 
@@ -31,5 +31,12 @@ describe('SubagentsSectionController', () => {
     await controller.load()
     expect(controller.store.getSnapshot().status).toBe('error')
     expect(controller.store.getSnapshot().error).toContain('boom')
+  })
+
+  it('passes toolFilter null through to the API when clearing a filter', async () => {
+    const updateProfile = vi.fn(async () => profile)
+    const controller = new SubagentsSectionController({ updateProfile } as never)
+    await controller.update('explore', { toolFilter: null })
+    expect(updateProfile).toHaveBeenCalledWith('explore', { toolFilter: null })
   })
 })

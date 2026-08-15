@@ -208,10 +208,13 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
       }
 
       const run = await ctx.subagents.start(provider, { ...request, signal: exec.signal })
-      const result = await run.result
-      await run.dispose()
-      if (result.stopReason !== 'completed') throw new Error('subagent run ended abnormally: ' + result.stopReason)
-      return { kind: 'foreground' as const, runId: run.id, output: result.output as unknown as JsonValue[] }
+      try {
+        const result = await run.result
+        if (result.stopReason !== 'completed') throw new Error('subagent run ended abnormally: ' + result.stopReason)
+        return { kind: 'foreground' as const, runId: run.id, output: result.output as unknown as JsonValue[] }
+      } finally {
+        await run.dispose()
+      }
     },
   })
 }

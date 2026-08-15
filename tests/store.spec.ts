@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SubagentStore, validateProfilePayload } from '../src/store.ts'
+import { SubagentStore, validateProfilePatch, validateProfilePayload } from '../src/store.ts'
 import type { SubagentProfilePayload } from '../src/protocol.ts'
 
 function tempStore(): { store: SubagentStore; dir: string } {
@@ -82,5 +82,41 @@ describe('SubagentStore', () => {
     expect(() => validateProfilePayload(payload({ name: '  ' }))).toThrow(/name/)
     expect(() => validateProfilePayload(payload({ provider: 'acp' as never }))).toThrow(/provider/)
     expect(() => validateProfilePayload(payload({ reasoningEffort: 'ultra' as never }))).toThrow(/reasoningEffort/)
+  })
+
+  it('clears toolFilter with null and accepts it in patches', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({ id: 'filtered', toolFilter: { allow: ['read'] } }))
+      expect(created.toolFilter).toEqual({ allow: ['read'] })
+      const updated = store.update('filtered', { toolFilter: null })
+      expect(updated.toolFilter).toBeUndefined()
+      expect(() => validateProfilePatch({ toolFilter: null })).not.toThrow()
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as { profiles: Array<{ id: string; toolFilter?: unknown }> }
+      expect(raw.profiles.find(entry => entry.id === 'filtered')?.toolFilter).toBeUndefined()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('does not overwrite a corrupt store file when listing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const corrupt = '{ this is not valid json'
+    writeFileSync(path, corrupt, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(readFileSync(path, 'utf8')).toBe(corrupt)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('trims tool filter entries and requires boolean enabled', () => {
+    const normalized = validateProfilePayload(payload({
+      enabled: true,
+      toolFilter: { allow: [' read ', '', 'write '], deny: ['', ' edit '] },
+    }))
+    expect(normalized.toolFilter).toEqual({ allow: ['read', 'write'], deny: ['edit'] })
+    expect(() => validateProfilePayload(payload({ enabled: 'yes' as never }))).toThrow(/enabled/)
+    expect(() => validateProfilePayload(payload({ toolFilter: {} }))).toThrow(/allow or deny/)
+    expect(() => validateProfilePayload(payload({ toolFilter: { allow: [], deny: [] } }))).toThrow(/allow or deny/)
   })
 })

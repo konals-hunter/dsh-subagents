@@ -7,9 +7,8 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the settings-surface SlotMap merge (settings.section).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SubagentProfile, SubagentProfilePatch, SubagentProfilePayload } from '../protocol.ts'
+import type { SubagentProfile, SubagentProfilePatch, SubagentProfilePayload, ToolFilter } from '../protocol.ts'
 import type { SubagentsSectionState } from './controller.ts'
-import type { SSubagentsKey } from './locales.ts'
 import { NS } from './locales.ts'
 import css from './subagents.module.css'
 
@@ -71,6 +70,16 @@ function parseCommaList(value: string): string[] | undefined {
   return items.length === 0 ? undefined : items
 }
 
+function normalizeToolFilterDraft(value: ToolFilter | null | undefined): ToolFilter | null {
+  const allow = value?.allow?.filter(item => item.trim() !== '').map(item => item.trim())
+  const deny = value?.deny?.filter(item => item.trim() !== '').map(item => item.trim())
+  if ((allow === undefined || allow.length === 0) && (deny === undefined || deny.length === 0)) return null
+  return {
+    ...allow !== undefined && allow.length > 0 ? { allow } : {},
+    ...deny !== undefined && deny.length > 0 ? { deny } : {},
+  }
+}
+
 /**
  * Render the Subagents settings section.
  * @param props - composed slot props.
@@ -112,7 +121,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
     setError(null)
     try {
       if (editing?.mode === 'new') {
-        await create(draft as SubagentProfilePayload)
+        await create({ ...draft, toolFilter: normalizeToolFilterDraft(draft.toolFilter) } as SubagentProfilePayload)
       } else if (editing?.mode === 'edit' && editing.profile !== undefined) {
         await update(editing.profile.id, {
           name: draft.name,
@@ -126,7 +135,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           maxDepth: draft.maxDepth,
           persona: draft.persona,
           promptTemplate: draft.promptTemplate,
-          toolFilter: draft.toolFilter,
+          toolFilter: normalizeToolFilterDraft(draft.toolFilter),
           backgroundMode: draft.backgroundMode,
         })
       }
@@ -138,12 +147,30 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
     }
   }
 
+  const handleRemove = async (id: string): Promise<void> => {
+    setError(null)
+    try {
+      await remove(id)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const handleRestore = async (): Promise<void> => {
+    setError(null)
+    try {
+      await restoreBuiltins()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   return (
     <div className={css.section}>
       <div className={css.toolbar}>
         <button type="button" className={css.primary} onClick={openNew}>{t('list.add')}</button>
-        <button type="button" className={css.secondary} onClick={() => { void restoreBuiltins() }}>{t('list.restore')}</button>
+        <button type="button" className={css.secondary} onClick={() => { void handleRestore() }}>{t('list.restore')}</button>
       </div>
+      {error !== null && editing === null && <p className={css.error}>{t('list.error')}: {error}</p>}
       {state.profiles.length === 0
         ? <p className={css.empty}>{t('list.empty')}</p>
         : (
@@ -167,7 +194,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
                 <div className={css.cardActions}>
                   <button type="button" onClick={() => openEdit(profile)}>{t('list.edit')}</button>
                   {!profile.builtin && (
-                    <button type="button" onClick={() => { void remove(profile.id) }}>{t('list.delete')}</button>
+                    <button type="button" onClick={() => { void handleRemove(profile.id) }}>{t('list.delete')}</button>
                   )}
                 </div>
               </div>

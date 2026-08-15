@@ -50,8 +50,12 @@ function parseToolFilter(value: unknown): ToolFilter | undefined {
     throw new Error('toolFilter.deny must be an array of strings')
   }
   const normalized: ToolFilter = {}
-  if (allow !== undefined && allow.length > 0) normalized.allow = allow
-  if (deny !== undefined && deny.length > 0) normalized.deny = deny
+  if (allow !== undefined && allow.some(item => item.trim() !== '')) {
+    normalized.allow = allow.map(item => item.trim()).filter(item => item !== '')
+  }
+  if (deny !== undefined && deny.some(item => item.trim() !== '')) {
+    normalized.deny = deny.map(item => item.trim()).filter(item => item !== '')
+  }
   if (normalized.allow === undefined && normalized.deny === undefined) throw new Error('toolFilter must name allow or deny')
   return normalized
 }
@@ -87,11 +91,13 @@ export function validateProfilePayload(payload: unknown): SubagentProfilePayload
     ? 'one-shot'
     : payload.backgroundMode
   if (backgroundMode !== 'one-shot' && backgroundMode !== 'continuable') throw new Error('backgroundMode must be one-shot or continuable')
+  const enabled = payload.enabled
+  if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
   return {
     id,
     name,
     description,
-    enabled: payload.enabled !== false,
+    enabled,
     provider,
     modelProvider,
     model,
@@ -160,15 +166,15 @@ export class SubagentStore {
     this.path = resolve(path ?? storePath())
   }
 
-  private load(): StoreFile {
-    if (!existsSync(this.path)) return { version: FORMAT_VERSION, profiles: [] }
+  private load(): { file: StoreFile; corrupt: boolean } {
+    if (!existsSync(this.path)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: false }
     try {
       const parsed = JSON.parse(readFileSync(this.path, 'utf8')) as StoreFile
-      if (!Array.isArray(parsed.profiles)) return { version: FORMAT_VERSION, profiles: [] }
-      return parsed
+      if (!Array.isArray(parsed.profiles)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
+      return { file: parsed, corrupt: false }
     } catch (error) {
       console.warn('[dsh-subagents] profile store unreadable, starting empty:', error)
-      return { version: FORMAT_VERSION, profiles: [] }
+      return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: true }
     }
   }
 
@@ -180,7 +186,7 @@ export class SubagentStore {
   }
 
   private read(): StoreFile {
-    const file = this.load()
+    const { file, corrupt } = this.load()
     const builtins = builtinProfiles()
     let changed = false
     for (const builtin of builtins) {
@@ -189,7 +195,7 @@ export class SubagentStore {
         changed = true
       }
     }
-    if (changed) this.save(file)
+    if (changed && !corrupt) this.save(file)
     return file
   }
 
@@ -216,6 +222,7 @@ export class SubagentStore {
     const now = Date.now()
     const profile: SubagentProfile = {
       ...payload,
+      toolFilter: payload.toolFilter ?? undefined,
       builtin: false,
       createdAt: now,
       updatedAt: now,
@@ -230,7 +237,7 @@ export class SubagentStore {
     const file = this.read()
     const profile = file.profiles.find(entry => entry.id === id)
     if (profile === undefined) throw new Error('profile not found: ' + id)
-    Object.assign(profile, patch, { updatedAt: Date.now() })
+    Object.assign(profile, patch, { toolFilter: patch.toolFilter ?? undefined, updatedAt: Date.now() })
     this.save(file)
     this.notify()
     return profile

@@ -61,7 +61,11 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
         if (!isLoopbackRequest(req)) { writeJson(res, 403, { error: 'forbidden: loopback-only' }); return }
         const method = req.method ?? 'GET'
         if (method === 'GET') {
-          writeJson(res, 200, { profiles: store.list() })
+          try {
+            writeJson(res, 200, { profiles: store.list() })
+          } catch (error) {
+            writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+          }
           return
         }
         if (method === 'POST') {
@@ -100,8 +104,12 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
       handler: async (req, res) => {
         if (!isLoopbackRequest(req)) { writeJson(res, 403, { error: 'forbidden: loopback-only' }); return }
         if (req.method !== 'POST') { writeJson(res, 405, { error: 'method not allowed: ' + (req.method ?? '') }); return }
-        const profiles = store.restoreBuiltins()
-        writeJson(res, 200, { profiles })
+        try {
+          const profiles = store.restoreBuiltins()
+          writeJson(res, 200, { profiles })
+        } catch (error) {
+          writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+        }
       },
     },
   ]

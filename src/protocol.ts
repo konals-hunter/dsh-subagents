@@ -47,7 +47,7 @@ export interface SubagentProfilePayload {
   maxDepth?: number
   persona?: string
   promptTemplate?: string
-  toolFilter?: ToolFilter
+  toolFilter?: ToolFilter | null
   backgroundMode?: SubagentBackgroundMode
 }
 
