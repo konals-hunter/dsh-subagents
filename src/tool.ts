@@ -93,11 +93,13 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
       'When `profile` is omitted this behaves like the plain subagent tool using the parent defaults. ' +
       'Spawned children appear in the normal subagent UI.',
     parameters: {
-      profile: {
-        type: 'string',
-        enum: enabledIds,
-        description: 'Maintained subagent profile id to use; omit for free delegation.',
-      },
+      ...(enabledIds.length > 0 ? {
+        profile: {
+          type: 'string',
+          enum: enabledIds,
+          description: 'Maintained subagent profile id to use; omit for free delegation.',
+        },
+      } : {}),
       prompt: {
         type: 'string',
         required: true,

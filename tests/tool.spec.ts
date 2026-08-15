@@ -99,6 +99,15 @@ describe('subagent profile tool helpers', () => {
   })
 })
 
+describe('subagent profile tool schema', () => {
+  it('registers without a profile parameter when no profiles are enabled', () => {
+    const tool = makeSubagentProfileTool({ store: fakeStore([]), ctx: fakeCtx() })
+    const parameters = tool.parameters as { properties?: Record<string, unknown>; profile?: unknown }
+    expect(parameters.profile).toBeUndefined()
+    expect(parameters.properties?.profile).toBeUndefined()
+  })
+})
+
 describe('subagent profile tool execute', () => {
   it('delegates freely in the foreground and disposes the run', async () => {
     const { run, dispose } = completedRun()

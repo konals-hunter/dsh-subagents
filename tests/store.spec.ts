@@ -97,6 +97,18 @@ describe('SubagentStore', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('preserves toolFilter on partial updates that do not mention it', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({ id: 'filtered', toolFilter: { deny: ['edit'] } }))
+      expect(created.toolFilter).toEqual({ deny: ['edit'] })
+      const updated = store.update('filtered', { model: 'deepseek-v4-pro' })
+      expect(updated.toolFilter).toEqual({ deny: ['edit'] })
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as { profiles: Array<{ id: string; toolFilter?: unknown }> }
+      expect(raw.profiles.find(entry => entry.id === 'filtered')?.toolFilter).toEqual({ deny: ['edit'] })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('does not overwrite a corrupt store file when listing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
     const path = join(dir, 'store.json')
@@ -105,6 +117,18 @@ describe('SubagentStore', () => {
     const store = new SubagentStore(path)
     try {
       expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+      expect(readFileSync(path, 'utf8')).toBe(corrupt)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('does not overwrite a corrupt store file when restoring builtins', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const corrupt = '{ this is not valid json'
+    writeFileSync(path, corrupt, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.restoreBuiltins().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
       expect(readFileSync(path, 'utf8')).toBe(corrupt)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })

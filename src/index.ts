@@ -25,7 +25,7 @@ export const inject = ['webServer', 'tools', 'subagents'] as const
  */
 export function apply(ctx: Context): void {
   const store = new SubagentStore()
-  store.restoreBuiltins()
+  store.list()
 
   const { routes } = makeRoutes({ store })
 

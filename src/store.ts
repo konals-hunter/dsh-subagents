@@ -166,6 +166,8 @@ export class SubagentStore {
     this.path = resolve(path ?? storePath())
   }
 
+  private corrupt = false
+
   private load(): { file: StoreFile; corrupt: boolean } {
     if (!existsSync(this.path)) return { file: { version: FORMAT_VERSION, profiles: [] }, corrupt: false }
     try {
@@ -187,6 +189,7 @@ export class SubagentStore {
 
   private read(): StoreFile {
     const { file, corrupt } = this.load()
+    this.corrupt = corrupt
     const builtins = builtinProfiles()
     let changed = false
     for (const builtin of builtins) {
@@ -237,7 +240,12 @@ export class SubagentStore {
     const file = this.read()
     const profile = file.profiles.find(entry => entry.id === id)
     if (profile === undefined) throw new Error('profile not found: ' + id)
-    Object.assign(profile, patch, { toolFilter: patch.toolFilter ?? undefined, updatedAt: Date.now() })
+    const { toolFilter, ...rest } = patch
+    Object.assign(profile, rest)
+    if (Object.prototype.hasOwnProperty.call(patch, 'toolFilter')) {
+      profile.toolFilter = toolFilter ?? undefined
+    }
+    profile.updatedAt = Date.now()
     this.save(file)
     this.notify()
     return profile
@@ -255,7 +263,7 @@ export class SubagentStore {
 
   restoreBuiltins(): SubagentProfile[] {
     const file = this.read()
-    this.save(file)
+    if (!this.corrupt) this.save(file)
     this.notify()
     return file.profiles
   }
