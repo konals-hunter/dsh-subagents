@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { applyProfileEffort, installEffortInjection } from '../src/effort.ts'
-import type { SubagentStore } from '../src/store.ts'
+import { SubagentStore } from '../src/store.ts'
 import type { SubagentProfile } from '../src/protocol.ts'
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    readFileSync: vi.fn(actual.readFileSync),
+  }
+})
 
 const profile: SubagentProfile = {
   id: 'explore',
@@ -80,6 +91,39 @@ describe('installEffortInjection', () => {
 
     expect(resolved).toEqual({ provider: 'p', model: 'm' })
     expect(store.find).not.toHaveBeenCalled()
+  })
+
+  it('does not re-read the store file on repeated non-marker agent/request events', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    writeFileSync(path, JSON.stringify({
+      version: 1,
+      profiles: [],
+      continuableProfiles: { 'child-1': 'explore' },
+    }, null, 2), 'utf8')
+    const store = new SubagentStore(path)
+    const readFile = vi.mocked(readFileSync)
+    readFile.mockClear()
+    const listeners: Array<(args: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = []
+    const ctx = {
+      on: vi.fn((_event: string, listener: typeof listeners[number]) => {
+        listeners.push(listener)
+        return () => {}
+      }),
+    }
+
+    try {
+      installEffortInjection(ctx as never, store)
+      const listener = listeners[0]
+      for (let index = 0; index < 5; index++) {
+        const next = vi.fn(async () => ({ provider: 'p', model: 'm' }))
+        await listener({ agent: { id: 'not-in-map', options: {} } }, next)
+      }
+
+      expect(readFile).not.toHaveBeenCalled()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('injects reasoningEffort for resumed continuable children via the store map', async () => {

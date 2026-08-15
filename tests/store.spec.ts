@@ -552,6 +552,67 @@ describe('SubagentStore', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('prunes continuableProfiles entries when a custom profile is deleted', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.create(payload({ id: 'custom-prune' }))
+      store.recordContinuableProfile('child-a', 'custom-prune')
+      store.recordContinuableProfile('child-b', 'custom-prune')
+      store.recordContinuableProfile('child-c', 'explore')
+
+      store.delete('custom-prune')
+
+      expect(store.resolveContinuableProfile('child-a')).toBeUndefined()
+      expect(store.resolveContinuableProfile('child-b')).toBeUndefined()
+      expect(store.resolveContinuableProfile('child-c')).toBe('explore')
+
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        continuableProfiles?: Record<string, string>
+      }
+      expect(raw.continuableProfiles).toEqual({ 'child-c': 'explore' })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('refreshes the continuable profile cache when the store file changes externally', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.list()
+      store.recordContinuableProfile('child-1', 'explore')
+
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        continuableProfiles?: Record<string, string>
+      }
+      raw.continuableProfiles = { 'child-1': 'general' }
+      writeFileSync(store.path, JSON.stringify(raw, null, 2), 'utf8')
+
+      expect(store.resolveContinuableProfile('child-1')).toBe('explore')
+      store.list()
+      expect(store.resolveContinuableProfile('child-1')).toBe('general')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('refreshes the continuable profile cache after corrupt-file recovery', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const corrupt = '{ this is not valid json'
+    writeFileSync(path, corrupt, 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      expect(store.isCorrupt()).toBe(true)
+      expect(store.resolveContinuableProfile('child-1')).toBeUndefined()
+
+      writeFileSync(path, JSON.stringify({
+        version: 1,
+        profiles: [],
+        continuableProfiles: { 'child-1': 'custom-1' },
+      }, null, 2), 'utf8')
+
+      store.list()
+      expect(store.isCorrupt()).toBe(false)
+      expect(store.resolveContinuableProfile('child-1')).toBe('custom-1')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('drops unknown keys from stored profiles during normalization', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
     const path = join(dir, 'store.json')
@@ -613,6 +674,32 @@ describe('SubagentStore', () => {
       expect(stored?.promptTemplate).toBe('template')
       expect(stored?.toolFilter).toEqual({ allow: ['read', 'write'], deny: ['edit'] })
       expect(raw.profiles.find(entry => entry.id === 'custom-opt2')?.toolFilter).toEqual({ deny: ['edit'] })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('drops unknown keys nested inside toolFilter during stored-profile normalization', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const profile = storedProfile({
+      id: 'custom-nested-filter',
+      toolFilter: { allow: ['read'], unexpected: true, nested: { value: 1 } },
+    })
+    writeFileSync(path, JSON.stringify({ version: 1, profiles: [profile] }), 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      const loaded = store.find('custom-nested-filter')
+      expect(loaded?.toolFilter).toEqual({ allow: ['read'] })
+      expect(loaded?.toolFilter).not.toHaveProperty('unexpected')
+      expect(loaded?.toolFilter).not.toHaveProperty('nested')
+      expect(store.isCorrupt()).toBe(false)
+
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+        profiles: Array<{ id: string; toolFilter?: unknown }>
+      }
+      const stored = raw.profiles.find(entry => entry.id === 'custom-nested-filter')
+      expect(stored?.toolFilter).toEqual({ allow: ['read'] })
+      expect(stored?.toolFilter).not.toHaveProperty('unexpected')
+      expect(stored?.toolFilter).not.toHaveProperty('nested')
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 

@@ -3,7 +3,7 @@
  * builtin and custom profiles, written atomically (tmp + rename). Builtins are
  * merged on read/restore but never overwrite user edits.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { BUILTIN_IDS, builtinProfiles } from './builtins.ts'
@@ -166,13 +166,13 @@ function sameProfileField(profile: SubagentProfile, key: string, value: unknown)
   return (value ?? undefined) === (current ?? undefined)
 }
 
-function normalizeToolFilter(toolFilter: ToolFilter): ToolFilter | undefined {
+function normalizeToolFilter(toolFilter: ToolFilter): ToolFilter {
   const allow = toolFilter.allow?.map(item => item.trim()).filter(item => item !== '')
   const deny = toolFilter.deny?.map(item => item.trim()).filter(item => item !== '')
   const next: ToolFilter = {}
   if (allow !== undefined && allow.length > 0) next.allow = allow
   if (deny !== undefined && deny.length > 0) next.deny = deny
-  return sameToolFilter(next, toolFilter) ? undefined : next
+  return next
 }
 
 /**
@@ -209,8 +209,9 @@ function normalizeStoredProfile(profile: SubagentProfile): SubagentProfile {
     next.promptTemplate = promptTemplate
   }
   if (profile.toolFilter !== undefined) {
+    const hasUnknownToolFilterKeys = Object.keys(profile.toolFilter).some(key => key !== 'allow' && key !== 'deny')
     const normalizedToolFilter = normalizeToolFilter(profile.toolFilter)
-    if (normalizedToolFilter !== undefined) {
+    if (hasUnknownToolFilterKeys || !sameToolFilter(normalizedToolFilter, profile.toolFilter)) {
       next.toolFilter = normalizedToolFilter
       changed = true
     } else {
@@ -309,9 +310,14 @@ export function validateProfilePatch(payload: unknown): SubagentProfilePatch {
 export class SubagentStore {
   readonly path: string
   private readonly listeners = new Set<() => void>()
+  /** In-memory copy of the durable child-session -> profile-id map. */
+  private continuableProfiles: Record<string, string> = {}
 
   constructor(path?: string) {
     this.path = resolve(path ?? storePath())
+    const { file, corrupt } = this.load()
+    this.corrupt = corrupt
+    this.continuableProfiles = file.continuableProfiles ?? {}
   }
 
   private corrupt = false
@@ -345,12 +351,33 @@ export class SubagentStore {
     renameSync(tmp, this.path)
   }
 
-  private assertWritable(): void {
+  assertWritable(): void {
     if (this.corrupt) throw new Error('profile store is corrupt; refusing to overwrite ' + this.path)
   }
 
   isCorrupt(): boolean {
     return this.corrupt
+  }
+
+  /**
+   * Preflight that a continuable profile mapping can be persisted before a
+   * child is started. Refreshes from disk, rejects corrupt stores, and probes
+   * the store directory so a read-only/unwritable filesystem fails before the
+   * child exists.
+   */
+  canPersistContinuableProfile(): boolean {
+    try {
+      this.read()
+      this.assertWritable()
+      const dir = dirname(this.path)
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      const probe = join(dir, `.dsh-subagents-write-test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      writeFileSync(probe, '', { mode: 0o600 })
+      rmSync(probe, { force: true })
+      return true
+    } catch {
+      return false
+    }
   }
 
   private read(): StoreFile {
@@ -374,6 +401,7 @@ export class SubagentStore {
       this.save(file)
       this.notify()
     }
+    this.continuableProfiles = file.continuableProfiles
     return file
   }
 
@@ -399,14 +427,15 @@ export class SubagentStore {
     if (childSessionId === '' || profileId === '') throw new StoreClientError('childSessionId and profileId must be non-empty')
     const file = this.read()
     this.assertWritable()
-    file.continuableProfiles ??= {}
-    file.continuableProfiles[childSessionId] = profileId
+    const next = { ...file.continuableProfiles, [childSessionId]: profileId }
+    file.continuableProfiles = next
     this.save(file)
+    this.continuableProfiles = next
   }
 
   /** Resolve the profile id associated with a (possibly resumed) continuable child. */
   resolveContinuableProfile(childSessionId: string): string | undefined {
-    return this.read().continuableProfiles?.[childSessionId]
+    return this.continuableProfiles[childSessionId]
   }
 
   create(payload: SubagentProfilePayload): SubagentProfile {
@@ -480,7 +509,13 @@ export class SubagentStore {
     if (index < 0) throw new StoreClientError('profile not found: ' + id)
     if (file.profiles[index].builtin) throw new StoreClientError('builtin profile cannot be deleted')
     file.profiles.splice(index, 1)
+    const next = { ...file.continuableProfiles }
+    for (const [childSessionId, profileId] of Object.entries(next)) {
+      if (profileId === id) delete next[childSessionId]
+    }
+    file.continuableProfiles = next
     this.save(file)
+    this.continuableProfiles = next
     this.notify()
   }
 

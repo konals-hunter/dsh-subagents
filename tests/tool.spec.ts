@@ -27,12 +27,19 @@ const profile: SubagentProfile = {
   updatedAt: 1,
 }
 
-function fakeStore(profiles: SubagentProfile[]): SubagentStore & { recordContinuableProfile: ReturnType<typeof vi.fn> } {
+function fakeStore(profiles: SubagentProfile[]): SubagentStore & {
+  recordContinuableProfile: ReturnType<typeof vi.fn>
+  canPersistContinuableProfile: ReturnType<typeof vi.fn>
+} {
   return {
     enabledIds: () => profiles.filter(item => item.enabled).map(item => item.id),
     find: (id: string) => profiles.find(item => item.id === id),
     recordContinuableProfile: vi.fn(),
-  } as unknown as SubagentStore & { recordContinuableProfile: ReturnType<typeof vi.fn> }
+    canPersistContinuableProfile: vi.fn(() => true),
+  } as unknown as SubagentStore & {
+    recordContinuableProfile: ReturnType<typeof vi.fn>
+    canPersistContinuableProfile: ReturnType<typeof vi.fn>
+  }
 }
 
 function fakeCtx(overrides: {
@@ -204,6 +211,19 @@ describe('subagent profile tool execute', () => {
 
     expect(store.recordContinuableProfile).toHaveBeenCalledWith('child-1', 'cont')
     expect(result).toEqual({ kind: 'continuable', subagentId: 'child-1' })
+  })
+
+  it('refuses to start a continuable child when the profile mapping cannot be persisted', async () => {
+    const continuable = { ...profile, id: 'cont', backgroundMode: 'continuable' as const }
+    const startContinuable = vi.fn(async () => ({ childId: 'child-1' }))
+    const store = fakeStore([continuable])
+    store.canPersistContinuableProfile.mockReturnValue(false)
+    const ctx = fakeCtx({ startContinuable })
+    const tool = makeSubagentProfileTool({ store, ctx })
+
+    await expect(tool.execute({ profile: 'cont', prompt: 'Keep going' }, fakeExec())).rejects.toThrow(/not writable/)
+    expect(startContinuable).not.toHaveBeenCalled()
+    expect(store.recordContinuableProfile).not.toHaveBeenCalled()
   })
 
   it('still starts a continuable child when run_in_background is false', async () => {

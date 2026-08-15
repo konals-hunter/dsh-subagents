@@ -174,6 +174,9 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
       }
 
       if (backgroundMode === 'continuable') {
+        if (!store.canPersistContinuableProfile()) {
+          throw new Error('profile store is not writable; cannot persist continuable profile mapping')
+        }
         const started = await ctx.subagents.startContinuable({
           provider,
           label: request.label,
