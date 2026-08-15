@@ -205,6 +205,7 @@ describe('SubagentStore', () => {
       { updatedAt: 1.5 },
       { createdAt: Number.MAX_SAFE_INTEGER + 1 },
       { updatedAt: Number.MAX_SAFE_INTEGER + 1 },
+      { createdAt: 2, updatedAt: 1 },
     ]
     const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
     const path = join(dir, 'store.json')
@@ -376,5 +377,122 @@ describe('SubagentStore', () => {
     expect(() => validateProfilePayload(payload({ enabled: 'yes' as never }))).toThrow(/enabled/)
     expect(() => validateProfilePayload(payload({ toolFilter: {} }))).toThrow(/allow or deny/)
     expect(() => validateProfilePayload(payload({ toolFilter: { allow: [], deny: [] } }))).toThrow(/allow or deny/)
+  })
+
+  it('rejects direct create calls with empty required fields', () => {
+    const { store, dir } = tempStore()
+    try {
+      expect(() => store.create(payload({ id: 'empty-name', name: '' }))).toThrow(/name/)
+      expect(() => store.create(payload({ id: 'empty-description', description: '   ' }))).toThrow(/description/)
+      expect(store.find('empty-name')).toBeUndefined()
+      expect(store.find('empty-description')).toBeUndefined()
+      expect(store.isCorrupt()).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('normalizes direct create payloads and drops unknown keys', () => {
+    const { store, dir } = tempStore()
+    try {
+      const directPayload = {
+        ...payload({
+          id: 'normalized-create',
+          name: '  Custom  ',
+          description: '  Desc  ',
+          persona: '  hello  ',
+          toolFilter: { allow: [' read ', '', 'write '], deny: ['', ' edit '] },
+        }),
+        unknownKey: 'ignored',
+      } as SubagentProfilePayload & { unknownKey: string }
+
+      const created = store.create(directPayload)
+      expect(created.name).toBe('Custom')
+      expect(created.description).toBe('Desc')
+      expect(created.persona).toBe('hello')
+      expect(created.toolFilter).toEqual({ allow: ['read', 'write'], deny: ['edit'] })
+      expect(created).not.toHaveProperty('unknownKey')
+
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<Record<string, unknown>>
+      }
+      const stored = raw.profiles.find(entry => entry.id === 'normalized-create')
+      expect(stored).not.toHaveProperty('unknownKey')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('ignores undefined required fields and rejects empty values in direct updates', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.create(payload({ id: 'direct-update', name: 'Original', description: 'Original desc' }))
+      const updated = store.update('direct-update', { name: undefined } as never)
+      expect(updated.name).toBe('Original')
+      expect(() => store.update('direct-update', { name: '' } as never)).toThrow(/name/)
+      expect(() => store.update('direct-update', { description: '   ' } as never)).toThrow(/description/)
+
+      const after = store.find('direct-update')
+      expect(after?.name).toBe('Original')
+      expect(after?.description).toBe('Original desc')
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<{ id: string; name: string; description: string }>
+      }
+      expect(raw.profiles.find(entry => entry.id === 'direct-update')).toMatchObject({
+        name: 'Original',
+        description: 'Original desc',
+      })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('drops unknown keys from direct update patches', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.create(payload({ id: 'unknown-key-update' }))
+      const updated = store.update('unknown-key-update', {
+        name: 'Renamed',
+        unknownKey: 'ignored',
+      } as never)
+      expect(updated.name).toBe('Renamed')
+      expect(updated).not.toHaveProperty('unknownKey')
+
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<Record<string, unknown>>
+      }
+      expect(raw.profiles.find(entry => entry.id === 'unknown-key-update')).not.toHaveProperty('unknownKey')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('normalizes optional strings and toolFilter arrays when loading stored profiles', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const profile = storedProfile({
+      id: 'custom-opt',
+      persona: '  Hello  ',
+      promptTemplate: '  template  ',
+      toolFilter: { allow: [' read ', '', 'write '], deny: ['', ' edit '] },
+    })
+    const profileWithEmptyArray = storedProfile({
+      id: 'custom-opt2',
+      toolFilter: { allow: [], deny: [' edit '] },
+    })
+    writeFileSync(path, JSON.stringify({ version: 1, profiles: [profile, profileWithEmptyArray] }), 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      const loaded = store.find('custom-opt')
+      expect(loaded?.persona).toBe('Hello')
+      expect(loaded?.promptTemplate).toBe('template')
+      expect(loaded?.toolFilter).toEqual({ allow: ['read', 'write'], deny: ['edit'] })
+      expect(store.isCorrupt()).toBe(false)
+
+      const emptyArrayProfile = store.find('custom-opt2')
+      expect(emptyArrayProfile?.toolFilter).toEqual({ deny: ['edit'] })
+      expect(emptyArrayProfile?.toolFilter).not.toHaveProperty('allow')
+
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+        profiles: Array<{ id: string; persona?: string; promptTemplate?: string; toolFilter?: unknown }>
+      }
+      const stored = raw.profiles.find(entry => entry.id === 'custom-opt')
+      expect(stored?.persona).toBe('Hello')
+      expect(stored?.promptTemplate).toBe('template')
+      expect(stored?.toolFilter).toEqual({ allow: ['read', 'write'], deny: ['edit'] })
+      expect(raw.profiles.find(entry => entry.id === 'custom-opt2')?.toolFilter).toEqual({ deny: ['edit'] })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

@@ -46,7 +46,8 @@ function isStoredProfile(value: unknown): value is SubagentProfile {
   if (value.builtin !== (BUILTIN_IDS as readonly string[]).includes(value.id)) return false
   if (
     typeof value.createdAt !== 'number' || !Number.isSafeInteger(value.createdAt) || value.createdAt < 0 ||
-    typeof value.updatedAt !== 'number' || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0
+    typeof value.updatedAt !== 'number' || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0 ||
+    value.updatedAt < value.createdAt
   ) return false
   if (value.backgroundMode !== undefined && value.backgroundMode !== 'one-shot' && value.backgroundMode !== 'continuable') return false
   try {
@@ -109,6 +110,49 @@ function parseOptionalNumber(value: unknown, field: string): number | undefined 
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error(field + ' must be a non-negative safe integer')
   return value
+}
+
+function sameToolFilter(left: ToolFilter | undefined, right: ToolFilter | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right
+  return (
+    (left.allow === undefined) === (right.allow === undefined) &&
+    (left.deny === undefined) === (right.deny === undefined) &&
+    (left.allow ?? []).length === (right.allow ?? []).length &&
+    (left.deny ?? []).length === (right.deny ?? []).length &&
+    (left.allow ?? []).every((item, index) => item === right.allow?.[index]) &&
+    (left.deny ?? []).every((item, index) => item === right.deny?.[index])
+  )
+}
+
+function normalizeToolFilter(toolFilter: ToolFilter): ToolFilter | undefined {
+  const allow = toolFilter.allow?.map(item => item.trim()).filter(item => item !== '')
+  const deny = toolFilter.deny?.map(item => item.trim()).filter(item => item !== '')
+  const next: ToolFilter = {}
+  if (allow !== undefined && allow.length > 0) next.allow = allow
+  if (deny !== undefined && deny.length > 0) next.deny = deny
+  return sameToolFilter(next, toolFilter) ? undefined : next
+}
+
+/** Trim optional strings/toolFilter arrays on stored profiles while keeping validated required fields untouched. */
+function normalizeStoredProfile(profile: SubagentProfile): SubagentProfile {
+  const next = { ...profile }
+  let changed = false
+  if (profile.persona !== undefined && profile.persona !== profile.persona.trim()) {
+    next.persona = profile.persona.trim()
+    changed = true
+  }
+  if (profile.promptTemplate !== undefined && profile.promptTemplate !== profile.promptTemplate.trim()) {
+    next.promptTemplate = profile.promptTemplate.trim()
+    changed = true
+  }
+  if (profile.toolFilter !== undefined) {
+    const normalizedToolFilter = normalizeToolFilter(profile.toolFilter)
+    if (normalizedToolFilter !== undefined) {
+      next.toolFilter = normalizedToolFilter
+      changed = true
+    }
+  }
+  return changed ? next : profile
 }
 
 /** Validate and normalize a create payload. */
@@ -248,6 +292,11 @@ export class SubagentStore {
         changed = true
       }
     }
+    const normalizedProfiles = file.profiles.map(normalizeStoredProfile)
+    if (normalizedProfiles.some((profile, index) => profile !== file.profiles[index])) {
+      file.profiles = normalizedProfiles
+      changed = true
+    }
     if (changed && !corrupt) this.save(file)
     return file
   }
@@ -270,16 +319,17 @@ export class SubagentStore {
   }
 
   create(payload: SubagentProfilePayload): SubagentProfile {
+    const normalizedPayload = validateProfilePayload(payload)
     const file = this.read()
     this.assertWritable()
-    if (file.profiles.some(profile => profile.id === payload.id)) throw new Error('id already exists: ' + payload.id)
+    if (file.profiles.some(profile => profile.id === normalizedPayload.id)) throw new Error('id already exists: ' + normalizedPayload.id)
     const now = Date.now()
     const profile: SubagentProfile = {
-      ...payload,
-      reasoningEffort: payload.reasoningEffort ?? undefined,
-      maxTokens: payload.maxTokens ?? undefined,
-      maxDepth: payload.maxDepth ?? undefined,
-      toolFilter: payload.toolFilter ?? undefined,
+      ...normalizedPayload,
+      reasoningEffort: normalizedPayload.reasoningEffort ?? undefined,
+      maxTokens: normalizedPayload.maxTokens ?? undefined,
+      maxDepth: normalizedPayload.maxDepth ?? undefined,
+      toolFilter: normalizedPayload.toolFilter ?? undefined,
       builtin: false,
       createdAt: now,
       updatedAt: now,
@@ -291,24 +341,28 @@ export class SubagentStore {
   }
 
   update(id: string, patch: SubagentProfilePatch): SubagentProfile {
+    const editable = { ...patch } as Record<string, unknown>
+    delete editable.id
+    delete editable.builtin
+    delete editable.createdAt
+    delete editable.updatedAt
+    const normalizedPatch = validateProfilePatch(editable)
     const file = this.read()
     this.assertWritable()
     const profile = file.profiles.find(entry => entry.id === id)
     if (profile === undefined) throw new Error('profile not found: ' + id)
-    const patchWithImmutable = patch as SubagentProfilePatch & { id?: unknown; builtin?: unknown; createdAt?: unknown; updatedAt?: unknown }
-    const { id: _id, builtin: _builtin, createdAt: _createdAt, updatedAt: _updatedAt, ...editable } = patchWithImmutable
-    const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = editable
+    const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = normalizedPatch
     Object.assign(profile, rest)
-    if (Object.prototype.hasOwnProperty.call(patch, 'toolFilter')) {
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'toolFilter')) {
       profile.toolFilter = toolFilter ?? undefined
     }
-    if (Object.prototype.hasOwnProperty.call(patch, 'reasoningEffort')) {
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'reasoningEffort')) {
       profile.reasoningEffort = reasoningEffort ?? undefined
     }
-    if (Object.prototype.hasOwnProperty.call(patch, 'maxTokens')) {
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'maxTokens')) {
       profile.maxTokens = maxTokens ?? undefined
     }
-    if (Object.prototype.hasOwnProperty.call(patch, 'maxDepth')) {
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'maxDepth')) {
       profile.maxDepth = maxDepth ?? undefined
     }
     profile.updatedAt = Date.now()
