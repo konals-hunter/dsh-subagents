@@ -85,6 +85,45 @@ async function callHandler(
   return { status, json: JSON.parse(body) as unknown }
 }
 
+async function callHandlerWithStream(
+  route: { handler: (req: never, res: never) => void | Promise<void> },
+  method: string,
+  url: string,
+  stream: Readable,
+): Promise<{ status: number; json: unknown }> {
+  let status = 0
+  let body = ''
+  const res = {
+    writeHead(code: number) {
+      status = code
+      return res
+    },
+    end(data?: unknown) {
+      body = String(data ?? '')
+      return res
+    },
+  }
+  const req = {
+    method,
+    url,
+    headers: { host: '127.0.0.1' },
+    socket: { remoteAddress: '127.0.0.1' },
+    [Symbol.asyncIterator]: stream[Symbol.asyncIterator].bind(stream),
+    resume: () => {},
+  }
+  await route.handler(req as never, res as never)
+  return { status, json: JSON.parse(body) as unknown }
+}
+
+async function callHandlerWithBody(
+  route: { handler: (req: never, res: never) => void | Promise<void> },
+  method: string,
+  url: string,
+  body: unknown,
+): Promise<{ status: number; json: unknown }> {
+  return await callHandlerWithStream(route, method, url, Readable.from([Buffer.from(JSON.stringify(body))]))
+}
+
 describe('subagents routes', () => {
   it('lists builtins and CRUDs a custom profile', async () => {
     const listed = await request('/api/dsh-subagents/profiles')
@@ -227,6 +266,69 @@ describe('subagents routes', () => {
     await routes[0].handler(req as never, res as never)
     expect(status).toBe(400)
     expect(JSON.parse(body) as { error: string }).toMatchObject({ error: expect.stringContaining('invalid JSON body') })
+  })
+
+  it('returns 413 and drains the request body when the JSON body exceeds the limit', async () => {
+    let status = 0
+    let body = ''
+    let resumed = false
+    const res = {
+      writeHead(code: number) {
+        status = code
+        return res
+      },
+      end(data?: unknown) {
+        body = String(data ?? '')
+        return res
+      },
+    }
+    const bodyStream = new Readable({
+      read() {
+        this.push(Buffer.alloc(65 * 1024, 0x20))
+        this.push(null)
+      },
+    })
+    const req = {
+      method: 'POST',
+      url: '/api/dsh-subagents/profiles',
+      headers: { host: '127.0.0.1' },
+      socket: { remoteAddress: '127.0.0.1' },
+      [Symbol.asyncIterator]: bodyStream[Symbol.asyncIterator].bind(bodyStream),
+      resume: () => { resumed = true },
+    }
+    await routes[0].handler(req as never, res as never)
+    expect(status).toBe(413)
+    expect(resumed).toBe(true)
+    expect(JSON.parse(body) as { error: string }).toMatchObject({ error: expect.stringContaining('too large') })
+  })
+
+  it('returns 500 when store write operations fail with internal errors', async () => {
+    const { routes } = makeRoutes({
+      store: {
+        create: () => { throw new Error('disk write failed') },
+        update: () => { throw new Error('disk write failed') },
+        delete: () => { throw new Error('disk write failed') },
+      } as never,
+    })
+    const created = await callHandlerWithBody(routes[0], 'POST', '/api/dsh-subagents/profiles', {
+      id: 'write-fail',
+      name: 'Write Fail',
+      description: 'Write failure',
+      enabled: true,
+      provider: 'spawn',
+      modelProvider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+    })
+    expect(created.status).toBe(500)
+    expect((created.json as { error: string }).error).toContain('disk write failed')
+
+    const updated = await callHandlerWithBody(routes[0], 'PUT', '/api/dsh-subagents/profiles?id=explore', { name: 'Renamed' })
+    expect(updated.status).toBe(500)
+    expect((updated.json as { error: string }).error).toContain('disk write failed')
+
+    const deleted = await callHandler(routes[0], 'DELETE', '/api/dsh-subagents/profiles?id=explore')
+    expect(deleted.status).toBe(500)
+    expect((deleted.json as { error: string }).error).toContain('disk write failed')
   })
 
   it('rejects non-loopback Host headers with 403', async () => {

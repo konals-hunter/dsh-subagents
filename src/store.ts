@@ -18,6 +18,14 @@ import type {
 /** File format version. */
 const FORMAT_VERSION = 1
 
+/** Errors caused by invalid caller input or forbidden store operations (400-class). */
+export class StoreClientError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StoreClientError'
+  }
+}
+
 /** Store file location: <home>/.dsh/dsh-subagents.json. */
 export function storePath(): string {
   return join(homedir(), '.dsh', 'dsh-subagents.json')
@@ -75,19 +83,19 @@ function hasDuplicateIds(profiles: SubagentProfile[]): boolean {
 function parseReasoningEffort(value: unknown): ReasoningEffort | undefined {
   if (value === undefined || value === null) return undefined
   if (value === 'off' || value === 'low' || value === 'medium' || value === 'high' || value === 'max') return value
-  throw new Error('reasoningEffort must be off, low, medium, high or max')
+  throw new StoreClientError('reasoningEffort must be off, low, medium, high or max')
 }
 
 function parseToolFilter(value: unknown): ToolFilter | undefined {
   if (value === undefined || value === null) return undefined
-  if (!isRecord(value)) throw new Error('toolFilter must be an object')
+  if (!isRecord(value)) throw new StoreClientError('toolFilter must be an object')
   const allow = value.allow
   const deny = value.deny
   if (allow !== undefined && (!Array.isArray(allow) || allow.some(item => typeof item !== 'string'))) {
-    throw new Error('toolFilter.allow must be an array of strings')
+    throw new StoreClientError('toolFilter.allow must be an array of strings')
   }
   if (deny !== undefined && (!Array.isArray(deny) || deny.some(item => typeof item !== 'string'))) {
-    throw new Error('toolFilter.deny must be an array of strings')
+    throw new StoreClientError('toolFilter.deny must be an array of strings')
   }
   const normalized: ToolFilter = {}
   if (allow !== undefined && allow.some(item => item.trim() !== '')) {
@@ -96,19 +104,19 @@ function parseToolFilter(value: unknown): ToolFilter | undefined {
   if (deny !== undefined && deny.some(item => item.trim() !== '')) {
     normalized.deny = deny.map(item => item.trim()).filter(item => item !== '')
   }
-  if (normalized.allow === undefined && normalized.deny === undefined) throw new Error('toolFilter must name allow or deny')
+  if (normalized.allow === undefined && normalized.deny === undefined) throw new StoreClientError('toolFilter must name allow or deny')
   return normalized
 }
 
 function parseOptionalString(value: unknown, field: string): string | undefined {
   if (value === undefined || value === null) return undefined
-  if (typeof value !== 'string') throw new Error(field + ' must be a string')
+  if (typeof value !== 'string') throw new StoreClientError(field + ' must be a string')
   return value.trim()
 }
 
 function parseOptionalNumber(value: unknown, field: string): number | undefined {
   if (value === undefined || value === null) return undefined
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error(field + ' must be a non-negative safe integer')
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new StoreClientError(field + ' must be a non-negative safe integer')
   return value
 }
 
@@ -157,25 +165,25 @@ function normalizeStoredProfile(profile: SubagentProfile): SubagentProfile {
 
 /** Validate and normalize a create payload. */
 export function validateProfilePayload(payload: unknown): SubagentProfilePayload {
-  if (!isRecord(payload)) throw new Error('body must be a JSON object')
+  if (!isRecord(payload)) throw new StoreClientError('body must be a JSON object')
   const id = typeof payload.id === 'string' ? payload.id.trim() : ''
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) throw new Error('id must match ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$')
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) throw new StoreClientError('id must match ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$')
   const name = typeof payload.name === 'string' ? payload.name.trim() : ''
-  if (name === '') throw new Error('name is required')
+  if (name === '') throw new StoreClientError('name is required')
   const description = typeof payload.description === 'string' ? payload.description.trim() : ''
-  if (description === '') throw new Error('description is required')
+  if (description === '') throw new StoreClientError('description is required')
   const provider = payload.provider
-  if (provider !== 'spawn' && provider !== 'fork') throw new Error('provider must be spawn or fork')
+  if (provider !== 'spawn' && provider !== 'fork') throw new StoreClientError('provider must be spawn or fork')
   const modelProvider = typeof payload.modelProvider === 'string' ? payload.modelProvider.trim() : ''
-  if (modelProvider === '') throw new Error('modelProvider is required')
+  if (modelProvider === '') throw new StoreClientError('modelProvider is required')
   const model = typeof payload.model === 'string' ? payload.model.trim() : ''
-  if (model === '') throw new Error('model is required')
+  if (model === '') throw new StoreClientError('model is required')
   const backgroundMode = payload.backgroundMode === undefined || payload.backgroundMode === null
     ? 'one-shot'
     : payload.backgroundMode
-  if (backgroundMode !== 'one-shot' && backgroundMode !== 'continuable') throw new Error('backgroundMode must be one-shot or continuable')
+  if (backgroundMode !== 'one-shot' && backgroundMode !== 'continuable') throw new StoreClientError('backgroundMode must be one-shot or continuable')
   const enabled = payload.enabled
-  if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
+  if (typeof enabled !== 'boolean') throw new StoreClientError('enabled must be a boolean')
   return {
     id,
     name,
@@ -196,35 +204,35 @@ export function validateProfilePayload(payload: unknown): SubagentProfilePayload
 
 /** Validate and normalize a partial update. */
 export function validateProfilePatch(payload: unknown): SubagentProfilePatch {
-  if (!isRecord(payload)) throw new Error('body must be a JSON object')
+  if (!isRecord(payload)) throw new StoreClientError('body must be a JSON object')
   const patch: SubagentProfilePatch = {}
-  if (payload.id !== undefined) throw new Error('id cannot be changed')
+  if (payload.id !== undefined) throw new StoreClientError('id cannot be changed')
   if (payload.name !== undefined) {
     const name = typeof payload.name === 'string' ? payload.name.trim() : ''
-    if (name === '') throw new Error('name is required')
+    if (name === '') throw new StoreClientError('name is required')
     patch.name = name
   }
   if (payload.description !== undefined) {
     const description = typeof payload.description === 'string' ? payload.description.trim() : ''
-    if (description === '') throw new Error('description is required')
+    if (description === '') throw new StoreClientError('description is required')
     patch.description = description
   }
   if (payload.enabled !== undefined) {
-    if (typeof payload.enabled !== 'boolean') throw new Error('enabled must be a boolean')
+    if (typeof payload.enabled !== 'boolean') throw new StoreClientError('enabled must be a boolean')
     patch.enabled = payload.enabled
   }
   if (payload.provider !== undefined) {
-    if (payload.provider !== 'spawn' && payload.provider !== 'fork') throw new Error('provider must be spawn or fork')
+    if (payload.provider !== 'spawn' && payload.provider !== 'fork') throw new StoreClientError('provider must be spawn or fork')
     patch.provider = payload.provider
   }
   if (payload.modelProvider !== undefined) {
     const modelProvider = typeof payload.modelProvider === 'string' ? payload.modelProvider.trim() : ''
-    if (modelProvider === '') throw new Error('modelProvider is required')
+    if (modelProvider === '') throw new StoreClientError('modelProvider is required')
     patch.modelProvider = modelProvider
   }
   if (payload.model !== undefined) {
     const model = typeof payload.model === 'string' ? payload.model.trim() : ''
-    if (model === '') throw new Error('model is required')
+    if (model === '') throw new StoreClientError('model is required')
     patch.model = model
   }
   if (payload.reasoningEffort !== undefined) patch.reasoningEffort = parseReasoningEffort(payload.reasoningEffort)
@@ -234,7 +242,7 @@ export function validateProfilePatch(payload: unknown): SubagentProfilePatch {
   if (payload.promptTemplate !== undefined) patch.promptTemplate = parseOptionalString(payload.promptTemplate, 'promptTemplate')
   if (payload.toolFilter !== undefined) patch.toolFilter = parseToolFilter(payload.toolFilter)
   if (payload.backgroundMode !== undefined) {
-    if (payload.backgroundMode !== 'one-shot' && payload.backgroundMode !== 'continuable') throw new Error('backgroundMode must be one-shot or continuable')
+    if (payload.backgroundMode !== 'one-shot' && payload.backgroundMode !== 'continuable') throw new StoreClientError('backgroundMode must be one-shot or continuable')
     patch.backgroundMode = payload.backgroundMode
   }
   return patch
@@ -325,7 +333,7 @@ export class SubagentStore {
     const normalizedPayload = validateProfilePayload(payload)
     const file = this.read()
     this.assertWritable()
-    if (file.profiles.some(profile => profile.id === normalizedPayload.id)) throw new Error('id already exists: ' + normalizedPayload.id)
+    if (file.profiles.some(profile => profile.id === normalizedPayload.id)) throw new StoreClientError('id already exists: ' + normalizedPayload.id)
     const now = Date.now()
     const profile: SubagentProfile = {
       ...normalizedPayload,
@@ -360,9 +368,10 @@ export class SubagentStore {
     delete editable.updatedAt
     const normalizedPatch = validateProfilePatch(editable)
     const file = this.read()
-    this.assertWritable()
     const profile = file.profiles.find(entry => entry.id === id)
-    if (profile === undefined) throw new Error('profile not found: ' + id)
+    if (profile === undefined) throw new StoreClientError('profile not found: ' + id)
+    if (Object.keys(normalizedPatch).length === 0) return profile
+    this.assertWritable()
     const { toolFilter, reasoningEffort, maxTokens, maxDepth, ...rest } = normalizedPatch
     Object.assign(profile, rest)
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'toolFilter')) {
@@ -387,8 +396,8 @@ export class SubagentStore {
     const file = this.read()
     this.assertWritable()
     const index = file.profiles.findIndex(profile => profile.id === id)
-    if (index < 0) throw new Error('profile not found: ' + id)
-    if (file.profiles[index].builtin) throw new Error('builtin profile cannot be deleted')
+    if (index < 0) throw new StoreClientError('profile not found: ' + id)
+    if (file.profiles[index].builtin) throw new StoreClientError('builtin profile cannot be deleted')
     file.profiles.splice(index, 1)
     this.save(file)
     this.notify()

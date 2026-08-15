@@ -460,6 +460,28 @@ describe('SubagentStore', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('does not save or notify for empty or unknown-only update patches', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({ id: 'noop-update', name: 'Original', description: 'Original desc' }))
+      const events: string[] = []
+      store.subscribe(() => events.push('change'))
+      const before = readFileSync(store.path, 'utf8')
+
+      const empty = store.update('noop-update', {})
+      expect(empty.name).toBe('Original')
+      expect(empty.updatedAt).toBe(created.updatedAt)
+      expect(events).toEqual([])
+      expect(readFileSync(store.path, 'utf8')).toBe(before)
+
+      const unknownOnly = store.update('noop-update', { unknownKey: 'ignored' } as never)
+      expect(unknownOnly.name).toBe('Original')
+      expect(unknownOnly.updatedAt).toBe(created.updatedAt)
+      expect(events).toEqual([])
+      expect(readFileSync(store.path, 'utf8')).toBe(before)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('normalizes optional strings and toolFilter arrays when loading stored profiles', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
     const path = join(dir, 'store.json')

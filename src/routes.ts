@@ -5,10 +5,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { SubagentStore } from './store.ts'
-import { validateProfilePatch, validateProfilePayload } from './store.ts'
+import { StoreClientError, validateProfilePatch, validateProfilePayload } from './store.ts'
 import { SUBAGENTS_API } from './protocol.ts'
 
 const MAX_JSON_BODY_BYTES = 64 * 1024
+const BODY_TOO_LARGE = Symbol('body-too-large')
 
 function isLoopbackRequest(request: IncomingMessage): boolean {
   const address = request.socket.remoteAddress
@@ -29,17 +30,21 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown> | undefined> {
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown> | undefined | typeof BODY_TOO_LARGE> {
   const chunks: Buffer[] = []
   let size = 0
   try {
     for await (const chunk of req) {
       const buffer = chunk as Buffer
       size += buffer.length
-      if (size > MAX_JSON_BODY_BYTES) return undefined
+      if (size > MAX_JSON_BODY_BYTES) {
+        req.resume?.()
+        return BODY_TOO_LARGE
+      }
       chunks.push(buffer)
     }
   } catch {
+    req.resume?.()
     return undefined
   }
   try {
@@ -75,12 +80,13 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
         }
         if (method === 'POST') {
           const body = await readJsonBody(req)
+          if (body === BODY_TOO_LARGE) { writeJson(res, 413, { error: 'request body too large' }); return }
           if (body === undefined) { writeJson(res, 400, { error: 'invalid JSON body' }); return }
           try {
             const profile = store.create(validateProfilePayload(body))
             writeJson(res, 201, { profile })
           } catch (error) {
-            writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
+            writeJson(res, error instanceof StoreClientError ? 400 : 500, { error: error instanceof Error ? error.message : String(error) })
           }
           return
         }
@@ -91,6 +97,7 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
         try {
           if (method === 'PUT') {
             const body = await readJsonBody(req)
+            if (body === BODY_TOO_LARGE) { writeJson(res, 413, { error: 'request body too large' }); return }
             if (body === undefined) { writeJson(res, 400, { error: 'invalid JSON body' }); return }
             const profile = store.update(id, validateProfilePatch(body))
             writeJson(res, 200, { profile })
@@ -99,7 +106,7 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
             writeJson(res, 200, { ok: true })
           }
         } catch (error) {
-          writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
+          writeJson(res, error instanceof StoreClientError ? 400 : 500, { error: error instanceof Error ? error.message : String(error) })
         }
       },
     },
