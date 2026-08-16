@@ -88,4 +88,67 @@ describe('installPresetComposition', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('recompose failed'), expect.any(Error))
   })
+
+  it('resolves default preset via agentPresets.defaultId', async () => {
+    const recompose = vi.fn(async () => {})
+    const on = vi.fn((_event: string, listener: (event: { agent: { options: { subagentPreset: string }; ctx: unknown } }) => void) => {
+      listener({
+        agent: {
+          options: { subagentPreset: 'default' },
+          ctx: 'child-ctx',
+        },
+      } as Parameters<typeof listener>[0])
+      return () => {}
+    })
+    const ctx = {
+      on,
+      get: vi.fn(() => ({ recompose, defaultId: 'user-default' })),
+    } as never
+
+    installPresetComposition(ctx)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(recompose).toHaveBeenCalledWith('child-ctx', 'user-default')
+  })
+
+  it('skips recompose when subagentPreset is inherit', async () => {
+    const recompose = vi.fn(async () => {})
+    const on = vi.fn((_event: string, listener: (event: { agent: { options: { subagentPreset: string }; ctx: unknown } }) => void) => {
+      listener({
+        agent: {
+          options: { subagentPreset: 'inherit' },
+          ctx: 'child-ctx',
+        },
+      } as Parameters<typeof listener>[0])
+      return () => {}
+    })
+    const ctx = {
+      on,
+      get: vi.fn(() => ({ recompose, defaultId: 'user-default' })),
+    } as never
+
+    installPresetComposition(ctx)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(recompose).not.toHaveBeenCalled()
+  })
+
+  it('skips default resolution when agentPresets.defaultId is missing', async () => {
+    const recompose = vi.fn(async () => {})
+    const on = vi.fn((_event: string, listener: (event: { agent: { options: { subagentPreset: string }; ctx: unknown } }) => void) => {
+      listener({
+        agent: {
+          options: { subagentPreset: 'default' },
+          ctx: 'child-ctx',
+        },
+      } as Parameters<typeof listener>[0])
+      return () => {}
+    })
+    const ctx = {
+      on,
+      get: vi.fn(() => ({ recompose })),
+    } as never
+
+    installPresetComposition(ctx)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(recompose).not.toHaveBeenCalled()
+  })
 })

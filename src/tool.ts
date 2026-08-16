@@ -56,12 +56,17 @@ export function resolveProfileRequest(
   const prompt = imageInstruction === ''
     ? basePrompt
     : imageInstruction + '\n\n' + basePrompt
+  const subagentPreset = profile === undefined
+    ? undefined
+    : profile.preset === undefined || profile.preset === null || profile.preset === 'inherit'
+      ? undefined
+      : profile.preset
   const agentOptions: SubagentProfileAgentOptions = {
     ...profile === undefined ? {} : {
       provider: profile.modelProvider,
       model: profile.model,
       subagentProfileId: profile.id,
-      subagentPreset: profile.preset ?? null,
+      ...subagentPreset !== undefined ? { subagentPreset } : {},
       ...profile.maxTokens === undefined ? {} : { maxTokens: profile.maxTokens },
     },
   }

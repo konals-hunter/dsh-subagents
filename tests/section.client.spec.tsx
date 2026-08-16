@@ -407,7 +407,7 @@ describe('SubagentsSection', () => {
     const injected = renderSection({ update }, [customProfile])
     const { container, root } = mountSection(injected)
     try {
-      const presetTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === '默认/继承')
+      const presetTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === '继承（主 Agent 当前 preset）')
       expect(presetTrigger).toBeDefined()
       await act(async () => { presetTrigger?.click() })
 
@@ -431,11 +431,11 @@ describe('SubagentsSection', () => {
       expect(presetTrigger).toBeDefined()
       await act(async () => { presetTrigger?.click() })
 
-      const inheritRow = [...container.querySelectorAll('button')].find(button => button.textContent === '默认/继承')
+      const inheritRow = [...container.querySelectorAll('button')].find(button => button.textContent === '继承（主 Agent 当前 preset）')
       expect(inheritRow).toBeDefined()
       await act(async () => { inheritRow?.click() })
 
-      expect(update).toHaveBeenCalledWith('custom-1', { preset: null })
+      expect(update).toHaveBeenCalledWith('custom-1', { preset: 'inherit' })
     } finally {
       unmountSection(container, root)
     }
@@ -450,7 +450,7 @@ describe('SubagentsSection', () => {
       expect(editButton).toBeDefined()
       await act(async () => { editButton?.click() })
 
-      const presetTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === '默认/继承')
+      const presetTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === '继承（主 Agent 当前 preset）')
       expect(presetTrigger).toBeDefined()
       await act(async () => { presetTrigger?.click() })
 

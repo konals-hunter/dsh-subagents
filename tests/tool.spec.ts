@@ -109,6 +109,36 @@ describe('subagent profile tool helpers', () => {
     expect(resolved.agentOptions.subagentPreset).toBeUndefined()
     expect(resolved.persona).toBeUndefined()
   })
+
+  it('resolves default preset into subagentPreset default marker', () => {
+    const resolved = resolveProfileRequest({ profile: 'explore', prompt: 'Find it' }, { ...profile, preset: 'default' })
+    expect(resolved.agentOptions).toMatchObject({
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      subagentProfileId: 'explore',
+      subagentPreset: 'default',
+    })
+  })
+
+  it('resolves inherit preset without subagentPreset marker', () => {
+    const resolved = resolveProfileRequest({ profile: 'explore', prompt: 'Find it' }, { ...profile, preset: 'inherit' })
+    expect(resolved.agentOptions).toMatchObject({
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      subagentProfileId: 'explore',
+    })
+    expect(resolved.agentOptions.subagentPreset).toBeUndefined()
+  })
+
+  it('resolves missing preset without subagentPreset marker', () => {
+    const resolved = resolveProfileRequest({ profile: 'explore', prompt: 'Find it' }, { ...profile, preset: undefined })
+    expect(resolved.agentOptions).toMatchObject({
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      subagentProfileId: 'explore',
+    })
+    expect(resolved.agentOptions.subagentPreset).toBeUndefined()
+  })
 })
 
 describe('buildImageInstruction', () => {

@@ -842,4 +842,18 @@ describe('SubagentStore', () => {
       }
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
+
+  it('accepts default and inherit preset values', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({ id: 'preset-semantics', preset: 'default' }))
+      expect(created.preset).toBe('default')
+      const updated = store.update('preset-semantics', { preset: 'inherit' })
+      expect(updated.preset).toBe('inherit')
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<{ id: string; preset?: unknown }>
+      }
+      expect(raw.profiles.find(entry => entry.id === 'preset-semantics')?.preset).toBe('inherit')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
 })

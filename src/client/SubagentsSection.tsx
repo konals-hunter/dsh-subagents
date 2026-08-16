@@ -61,7 +61,7 @@ function blankDraft(): Draft {
     modelProvider: '',
     model: '',
     backgroundMode: 'one-shot',
-    preset: undefined,
+    preset: 'inherit',
   }
 }
 
@@ -89,7 +89,7 @@ function toDraft(profile: SubagentProfile): Draft {
     promptTemplate: profile.promptTemplate,
     toolFilter: profile.toolFilter,
     backgroundMode: profile.backgroundMode ?? 'one-shot',
-    preset: profile.preset ?? undefined,
+    preset: profile.preset ?? 'inherit',
   }
 }
 
@@ -146,7 +146,10 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
     { value: 'continuable', label: 'continuable' },
   ], [])
   const presetOptions = useMemo(() => {
-    const items: Array<{ value: string; label: string }> = [{ value: '', label: t('form.preset.inherit') }]
+    const items: Array<{ value: string; label: string }> = [
+      { value: 'default', label: t('form.preset.default') },
+      { value: 'inherit', label: t('form.preset.inherit') },
+    ]
     for (const preset of presetCatalog.presets) {
       items.push({ value: preset.id, label: preset.name ?? preset.id })
     }
@@ -195,7 +198,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           promptTemplate: draft.promptTemplate,
           toolFilter: normalizeToolFilterDraft(draft.toolFilter),
           backgroundMode: draft.backgroundMode,
-          preset: draft.preset ?? null,
+          preset: draft.preset,
         })
       }
       close()
@@ -253,49 +256,51 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
                     </Pill>
                     <span className={css.cardId}>{profile.id}</span>
                   </div>
-                  <div className={css.quickActions}>
+                  <div className={css.rowActions}>
                     <Switch
                       checked={profile.enabled}
                       ariaLabel={`${t('list.enabled')} ${profile.name}`}
                       onChange={enabled => { void handleQuickUpdate(profile.id, { enabled }) }}
                     />
-                    <ModelSelect
-                      modelProvider={profile.modelProvider}
-                      model={profile.model}
-                      groups={catalog.groups}
-                      status={catalog.status}
-                      ariaLabel={`${t('form.model')} ${profile.name}`}
-                      loadingLabel={t('form.model.loading')}
-                      emptyLabel={t('form.model.empty')}
-                      onSelect={(modelProvider, model) => { void handleQuickUpdate(profile.id, { modelProvider, model }) }}
-                    />
-                    <EffortSelect
-                      value={profile.reasoningEffort}
-                      options={effortOptions}
-                      ariaLabel={`${t('form.reasoningEffort')} ${profile.name}`}
-                      onChange={reasoningEffort => { void handleQuickUpdate(profile.id, { reasoningEffort }) }}
-                    />
-                    <MenuSelect
-                      value={profile.preset ?? ''}
-                      options={presetOptions}
-                      size="sm"
-                      ariaLabel={`${t('form.preset')} ${profile.name}`}
-                      onChange={preset => { void handleQuickUpdate(profile.id, { preset: preset || null }) }}
-                    />
-                    <div className={css.rowActions}>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(profile)}>{t('list.edit')}</Button>
-                      {!profile.builtin && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={css.dangerButton}
-                          onClick={() => { void handleRemove(profile.id) }}
-                        >
-                          {t('list.delete')}
-                        </Button>
-                      )}
-                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(profile)}>{t('list.edit')}</Button>
+                    {!profile.builtin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={css.dangerButton}
+                        onClick={() => { void handleRemove(profile.id) }}
+                      >
+                        {t('list.delete')}
+                      </Button>
+                    )}
                   </div>
+                </div>
+                <div className={css.cardPresetRow}>
+                  <MenuSelect
+                    value={profile.preset ?? 'inherit'}
+                    options={presetOptions}
+                    size="sm"
+                    ariaLabel={`${t('form.preset')} ${profile.name}`}
+                    onChange={preset => { void handleQuickUpdate(profile.id, { preset }) }}
+                  />
+                </div>
+                <div className={css.cardControlsRow}>
+                  <ModelSelect
+                    modelProvider={profile.modelProvider}
+                    model={profile.model}
+                    groups={catalog.groups}
+                    status={catalog.status}
+                    ariaLabel={`${t('form.model')} ${profile.name}`}
+                    loadingLabel={t('form.model.loading')}
+                    emptyLabel={t('form.model.empty')}
+                    onSelect={(modelProvider, model) => { void handleQuickUpdate(profile.id, { modelProvider, model }) }}
+                  />
+                  <EffortSelect
+                    value={profile.reasoningEffort}
+                    options={effortOptions}
+                    ariaLabel={`${t('form.reasoningEffort')} ${profile.name}`}
+                    onChange={reasoningEffort => { void handleQuickUpdate(profile.id, { reasoningEffort }) }}
+                  />
                 </div>
                 {profile.description !== '' && (
                   <p className={css.cardDescription}>{profile.description}</p>
@@ -441,11 +446,11 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           <label className={css.field}>
             <span className={css.fieldLabel}>{t('form.preset')}</span>
             <MenuSelect
-              value={draft.preset ?? ''}
+              value={draft.preset ?? 'inherit'}
               options={presetOptions}
               size="md"
               ariaLabel={t('form.preset')}
-              onChange={preset => setDraft(current => current === null ? null : { ...current, preset: preset || null })}
+              onChange={preset => setDraft(current => current === null ? null : { ...current, preset })}
             />
           </label>
           <div className={css.editorActions}>

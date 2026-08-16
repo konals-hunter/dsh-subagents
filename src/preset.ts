@@ -19,7 +19,14 @@ import type { SubagentProfileAgentOptions } from './tool.ts'
 export function installPresetComposition(ctx: Context): () => void {
   return ctx.on('agent/created', async ({ agent }) => {
     const agentOptions = agent.options as SubagentProfileAgentOptions | undefined
-    const preset = agentOptions?.subagentPreset
+    const marker = agentOptions?.subagentPreset
+    if (marker === undefined || marker === null || marker === 'inherit') return
+    let preset = marker
+    if (marker === 'default') {
+      const agentPresets = ctx.get('agentPresets')
+      if (agentPresets === undefined || typeof agentPresets.defaultId !== 'string') return
+      preset = agentPresets.defaultId
+    }
     if (preset === undefined || preset === null) return
     try {
       const agentPresets = ctx.get('agentPresets')

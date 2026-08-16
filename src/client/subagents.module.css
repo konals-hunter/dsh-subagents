@@ -41,7 +41,9 @@
 .cardHeader {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .cardIdentity {
@@ -88,7 +90,19 @@
 .rowActions {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
+}
+
+.cardPresetRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardControlsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dangerButton {
