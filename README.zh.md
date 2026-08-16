@@ -18,6 +18,23 @@ DSH Subagent 配置管理插件：在设置中维护内置/自定义 Subagent，
 - 子 Agent 与官方工具使用同一 `spawn`/`fork` provider，因此会出现在正常
   subagent 列表面板中。
 
+## 提示：在 DSH 中配置支持图片的视觉模型
+
+如果 `read_image` 报错 `model "<id>" does not declare image input`，说明该模型在
+DSH 中没有被声明为支持图片输入。请在 `~/.dsh/settings.yaml`（或 设置 > 模型）中，
+为对应模型条目添加 `input: [text, image]`：
+
+```yaml
+llm-pi-ai:
+  providers:
+    your-provider:
+      models:
+        - id: your-vision-model
+          input: [text, image]
+```
+
+然后重启 `dsh web`。注意：只有模型/提供商本身真的支持图片输入时，这种配置才有效。
+
 ## 安装
 
 ### 本地开发（从代码目录安装）

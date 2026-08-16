@@ -15,6 +15,24 @@ through the native `ctx.subagents` providers.
 - Optional `imagePath` parameter: when set, the subagent is instructed to call `read_image` first so multimodal models (e.g. Vision) can see the image.
 - Spawned children use the same `spawn`/`fork` providers as the official tool, so they appear in the normal subagent UI.
 
+## Tip: Configure a vision-capable model in DSH
+
+If `read_image` fails with `model "<id>" does not declare image input`, the model
+is not declared as image-capable in DSH. Make sure the model entry in
+`~/.dsh/settings.yaml` (or Settings > Models) declares `input: [text, image]`:
+
+```yaml
+llm-pi-ai:
+  providers:
+    your-provider:
+      models:
+        - id: your-vision-model
+          input: [text, image]
+```
+
+Then restart `dsh web`. This only works if the provider/model actually accepts
+image input.
+
 ## Install
 
 ### Local development (from a checkout)
