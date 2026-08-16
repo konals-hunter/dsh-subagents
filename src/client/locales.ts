@@ -42,6 +42,17 @@ export const zh = {
   'form.cancel': '取消',
   'form.error': '保存失败',
   'error.load': '加载失败',
+  'config.title': '模型 Thinking Variant 配置',
+  'config.empty': '还没有模型 Thinking Variant 配置',
+  'config.add': '新增配置',
+  'config.edit': '编辑配置',
+  'config.delete': '删除配置',
+  'config.providerModel': 'Provider / 模型',
+  'config.variants': '可用 Thinking Variants',
+  'config.variantsPlaceholder': '每行一个 variant，格式 id=显示名（可选 |描述）\n例如：low=低档',
+  'config.defaultVariant': '默认 Variant（留空=跟随模型默认）',
+  'config.save': '保存配置',
+  'config.cancel': '取消',
 }
 
 export type SSubagentsKey = typeof zh
@@ -86,4 +97,15 @@ export const en: SSubagentsKey = {
   'form.cancel': 'Cancel',
   'form.error': 'Save failed',
   'error.load': 'Load failed',
+  'config.title': 'Model Thinking Variant Configs',
+  'config.empty': 'No model Thinking Variant configs yet',
+  'config.add': 'Add config',
+  'config.edit': 'Edit config',
+  'config.delete': 'Delete config',
+  'config.providerModel': 'Provider / model',
+  'config.variants': 'Available Thinking Variants',
+  'config.variantsPlaceholder': 'One variant per line, format id=display name (optional |description)\ne.g. low=Low',
+  'config.defaultVariant': 'Default variant (empty = follow model default)',
+  'config.save': 'Save config',
+  'config.cancel': 'Cancel',
 }

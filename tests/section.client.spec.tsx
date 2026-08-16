@@ -48,7 +48,11 @@ const catalogState: ModelCatalogState = {
     id: 'jiyuan',
     name: 'Jiyuan',
     models: [
-      { id: 'deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731' },
+      {
+        id: 'deepseek-v4-flash-0731',
+        name: 'DeepSeek V4 Flash 0731',
+        reasoning: { efforts: [{ id: 'high', name: 'high' }, { id: 'low', name: 'low' }], defaultEffort: 'high' },
+      },
       { id: 'deepseek-v4-0731', name: 'DeepSeek V4 0731' },
     ],
   }],
@@ -90,6 +94,9 @@ function renderSection(
     update: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     restoreBuiltins: vi.fn(async () => {}),
+    createThinkingConfig: vi.fn(async () => {}),
+    updateThinkingConfig: vi.fn(async () => {}),
+    deleteThinkingConfig: vi.fn(async () => {}),
   }
   return { store, catalogStore, presetStore, toolCatalogStore, useSubagents, useModelCatalog, usePresetCatalog, useToolCatalog, ...base, ...overrides }
 }
@@ -116,6 +123,9 @@ function mountSection(injected: ReturnType<typeof renderSection>): { container: 
       update={injected.update}
       remove={injected.remove}
       restoreBuiltins={injected.restoreBuiltins}
+      createThinkingConfig={injected.createThinkingConfig}
+      updateThinkingConfig={injected.updateThinkingConfig}
+      deleteThinkingConfig={injected.deleteThinkingConfig}
     />)
   })
   return { container, root }
@@ -211,6 +221,9 @@ describe('SubagentsSection', () => {
       update: (id, patch) => controller.update(id, patch),
       remove: id => controller.remove(id),
       restoreBuiltins: () => controller.restoreBuiltins(),
+      createThinkingConfig: () => controller.createThinkingConfig({ provider: '', model: '', variants: [] }),
+      updateThinkingConfig: () => controller.updateThinkingConfig('', '', { variants: [] }),
+      deleteThinkingConfig: () => controller.deleteThinkingConfig('', ''),
     }
     const presetStore = createSnapshotStore(presetCatalogState)
     const usePresetCatalog = <T,>(selector: (snapshot: PresetCatalogState) => T): T =>
@@ -351,7 +364,7 @@ describe('SubagentsSection', () => {
       expect(modelRow).toBeDefined()
       await act(async () => { modelRow?.click() })
 
-      expect(update).toHaveBeenCalledWith('custom-1', { modelProvider: 'jiyuan', model: 'deepseek-v4-0731' })
+      expect(update).toHaveBeenCalledWith('custom-1', { modelProvider: 'jiyuan', model: 'deepseek-v4-0731', reasoningEffort: null })
     } finally {
       unmountSection(container, root)
     }
@@ -371,6 +384,38 @@ describe('SubagentsSection', () => {
       await act(async () => { highRow?.click() })
 
       expect(update).toHaveBeenCalledWith('custom-1', { reasoningEffort: 'high' })
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('shows model-specific thinking variants and auto-selects the default on model change', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const modelTrigger = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('jiyuan / deepseek-v4-flash-0731'))
+      await act(async () => { modelTrigger?.click() })
+      const secondModel = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('DeepSeek V4 0731'))
+      await act(async () => { secondModel?.click() })
+      expect(update).toHaveBeenCalledWith('custom-1', expect.objectContaining({ modelProvider: 'jiyuan', model: 'deepseek-v4-0731', reasoningEffort: null }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('adds a thinking config from the management area', async () => {
+    const create = vi.fn(async () => {})
+    const injected = renderSection({ createThinkingConfig: create })
+    const { container, root } = mountSection(injected)
+    try {
+      const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增配置')
+      expect(addButton).toBeDefined()
+      await act(async () => { addButton?.click() })
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存配置')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: '', model: '' }))
     } finally {
       unmountSection(container, root)
     }
