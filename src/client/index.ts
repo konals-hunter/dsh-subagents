@@ -61,6 +61,9 @@ export function apply(ctx: ClientContext): void {
       update: (id, patch) => controller.update(id, patch),
       remove: id => controller.remove(id),
       restoreBuiltins: () => controller.restoreBuiltins(),
+      createThinkingConfig: payload => controller.createThinkingConfig(payload),
+      updateThinkingConfig: (provider, model, patch) => controller.updateThinkingConfig(provider, model, patch),
+      deleteThinkingConfig: (provider, model) => controller.deleteThinkingConfig(provider, model),
     }),
   }, SubagentsSection))
 }

@@ -1,6 +1,8 @@
 /** Browser-side API client for the /api/dsh-subagents route family. */
 import {
   SUBAGENTS_API,
+  type ModelThinkingConfig,
+  type ModelThinkingConfigPatch,
   type SubagentProfile,
   type SubagentProfilePatch,
   type SubagentProfilePayload,
@@ -9,6 +11,10 @@ import {
 export interface ProfilesResponse {
   profiles: SubagentProfile[]
   corrupt?: boolean
+}
+
+export interface ThinkingConfigsResponse {
+  configs: ModelThinkingConfig[]
 }
 
 export interface ToolsResponse {
@@ -82,6 +88,36 @@ export class SubagentsApi {
   async restoreBuiltins(): Promise<RestoreBuiltinsResponse> {
     const response = await fetch(SUBAGENTS_API.restoreBuiltins, { method: 'POST' })
     return await readJson<RestoreBuiltinsResponse>(response)
+  }
+
+  async listThinkingConfigs(): Promise<ThinkingConfigsResponse> {
+    const response = await fetch(SUBAGENTS_API.thinkingConfigs)
+    return await readJson<ThinkingConfigsResponse>(response)
+  }
+
+  async createThinkingConfig(payload: ModelThinkingConfig): Promise<ModelThinkingConfig> {
+    const response = await fetch(SUBAGENTS_API.thinkingConfigs, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const body = await readJson<{ config: ModelThinkingConfig }>(response)
+    return body.config
+  }
+
+  async updateThinkingConfig(provider: string, model: string, patch: ModelThinkingConfigPatch): Promise<ModelThinkingConfig> {
+    const response = await fetch(SUBAGENTS_API.thinkingConfigs + query({ provider, model }), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    const body = await readJson<{ config: ModelThinkingConfig }>(response)
+    return body.config
+  }
+
+  async deleteThinkingConfig(provider: string, model: string): Promise<void> {
+    const response = await fetch(SUBAGENTS_API.thinkingConfigs + query({ provider, model }), { method: 'DELETE' })
+    await readJson<{ ok: boolean }>(response)
   }
 
   async listTools(): Promise<ToolsResponse> {

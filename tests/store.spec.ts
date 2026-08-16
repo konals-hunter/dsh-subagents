@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SubagentStore, validateProfilePatch, validateProfilePayload } from '../src/store.ts'
+import { SubagentStore, validateProfilePatch, validateProfilePayload, validateThinkingConfigPayload } from '../src/store.ts'
 import type { SubagentProfilePayload } from '../src/protocol.ts'
 
 function tempStore(): { store: SubagentStore; dir: string } {
@@ -98,7 +98,7 @@ describe('SubagentStore', () => {
   it('validates payloads', () => {
     expect(() => validateProfilePayload(payload({ name: '  ' }))).toThrow(/name/)
     expect(() => validateProfilePayload(payload({ provider: 'acp' as never }))).toThrow(/provider/)
-    expect(() => validateProfilePayload(payload({ reasoningEffort: 'ultra' as never }))).toThrow(/reasoningEffort/)
+    expect(validateProfilePayload(payload({ reasoningEffort: 'ultra' as never })).reasoningEffort).toBe('ultra')
   })
 
   it('clears toolFilter with null and accepts it in patches', () => {
@@ -192,7 +192,6 @@ describe('SubagentStore', () => {
     const malformedOptions: Array<Record<string, unknown>> = [
       { toolFilter: { allow: 'read' } },
       { persona: 123 },
-      { reasoningEffort: 'ultra' },
       { reasoningEffort: null },
       { maxTokens: -1 },
       { maxTokens: null },
@@ -855,5 +854,83 @@ describe('SubagentStore', () => {
       }
       expect(raw.profiles.find(entry => entry.id === 'preset-semantics')?.preset).toBe('inherit')
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+describe('thinking configs', () => {
+  it('seeds step-3.7-flash only when modelThinkingConfigs field is missing', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.list()
+      let raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        modelThinkingConfigs?: Array<{ provider: string; model: string; defaultVariant?: string }>
+      }
+      expect(raw.modelThinkingConfigs).toEqual([
+        expect.objectContaining({ provider: 'stepfun', model: 'step-3.7-flash', defaultVariant: 'medium' }),
+      ])
+
+      // Empty array is respected: deletion stays deleted.
+      raw.modelThinkingConfigs = []
+      writeFileSync(store.path, JSON.stringify(raw, null, 2))
+      const reloaded = new SubagentStore(store.path)
+      expect(reloaded.listThinkingConfigs()).toEqual([])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('CRUDs a custom thinking config and enforces uniqueness', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.list()
+      const created = store.createThinkingConfig({
+        provider: 'jiyuan',
+        model: 'deepseek-v4-flash-0731',
+        variants: [{ id: 'off', name: 'off' }, { id: 'max', name: 'max' }],
+        defaultVariant: 'max',
+      })
+      expect(created.defaultVariant).toBe('max')
+      expect(() => store.createThinkingConfig({
+        provider: 'jiyuan',
+        model: 'deepseek-v4-flash-0731',
+        variants: [{ id: 'low', name: 'low' }],
+      })).toThrow(/already exists|已存在/)
+
+      const updated = store.updateThinkingConfig('jiyuan', 'deepseek-v4-flash-0731', {
+        variants: [{ id: 'low', name: 'low' }],
+        defaultVariant: null,
+      })
+      expect(updated.variants).toEqual([{ id: 'low', name: 'low' }])
+      expect(updated.defaultVariant).toBeUndefined()
+
+      store.deleteThinkingConfig('jiyuan', 'deepseek-v4-flash-0731')
+      expect(store.listThinkingConfigs().some(c => c.model === 'deepseek-v4-flash-0731')).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('does not persist or notify for a no-op thinking config update', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.list()
+      const config = store.listThinkingConfigs().find(entry => entry.provider === 'stepfun' && entry.model === 'step-3.7-flash')
+      expect(config).toBeDefined()
+      const listener = vi.fn()
+      store.subscribe(listener)
+
+      const same = store.updateThinkingConfig('stepfun', 'step-3.7-flash', {
+        variants: config!.variants.map(variant => ({ ...variant })),
+        defaultVariant: config!.defaultVariant,
+      })
+      expect(same).toEqual(config)
+      expect(listener).not.toHaveBeenCalled()
+
+      const empty = store.updateThinkingConfig('stepfun', 'step-3.7-flash', {})
+      expect(empty).toEqual(config)
+      expect(listener).not.toHaveBeenCalled()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('validates config payloads', () => {
+    expect(() => validateThinkingConfigPayload({ provider: '', model: 'm', variants: [{ id: 'a', name: 'A' }] })).toThrow(/provider/)
+    expect(() => validateThinkingConfigPayload({ provider: 'p', model: 'm', variants: [] })).toThrow(/variants/)
+    expect(() => validateThinkingConfigPayload({ provider: 'p', model: 'm', variants: [{ id: 'a', name: 'A' }], defaultVariant: 'b' })).toThrow(/defaultVariant/)
   })
 })

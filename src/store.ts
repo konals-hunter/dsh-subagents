@@ -7,7 +7,11 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { BUILTIN_IDS, builtinProfiles } from './builtins.ts'
+import { DEFAULT_THINKING_CONFIGS } from './thinking-configs.ts'
 import type {
+  ModelThinkingConfig,
+  ModelThinkingConfigPatch,
+  ModelThinkingVariant,
   ReasoningEffort,
   SubagentProfile,
   SubagentProfilePatch,
@@ -36,6 +40,8 @@ interface StoreFile {
   profiles: SubagentProfile[]
   /** Durable child-session -> profile-id map used for continuable effort injection. */
   continuableProfiles?: Record<string, string>
+  /** Per-model thinking variant configs; absent means seed defaults, [] means user cleared them. */
+  modelThinkingConfigs?: ModelThinkingConfig[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,8 +118,10 @@ const PROFILE_FIELDS = new Set<string>([
 
 function parseReasoningEffort(value: unknown): ReasoningEffort | undefined {
   if (value === undefined || value === null) return undefined
-  if (value === 'off' || value === 'low' || value === 'medium' || value === 'high' || value === 'max') return value
-  throw new StoreClientError('reasoningEffort must be off, low, medium, high or max')
+  if (typeof value !== 'string') throw new StoreClientError('reasoningEffort must be a non-empty string')
+  const trimmed = value.trim()
+  if (trimmed === '') throw new StoreClientError('reasoningEffort must be a non-empty string')
+  return trimmed
 }
 
 function parseToolFilter(value: unknown): ToolFilter | undefined {
@@ -144,6 +152,101 @@ function parsePreset(value: unknown): string | undefined {
   const trimmed = value.trim()
   if (trimmed === '') throw new StoreClientError('preset must not be empty')
   return trimmed
+}
+
+function parseVariant(value: unknown): ModelThinkingVariant | undefined {
+  if (!isRecord(value)) throw new StoreClientError('each variant must be an object')
+  const id = typeof value.id === 'string' ? value.id.trim() : ''
+  const name = typeof value.name === 'string' ? value.name.trim() : ''
+  if (id === '' || name === '') throw new StoreClientError('each variant must have non-empty id and name')
+  let description: string | undefined
+  if (value.description !== undefined) {
+    if (typeof value.description !== 'string') throw new StoreClientError('variant description must be a string')
+    const trimmed = value.description.trim()
+    if (trimmed === '') throw new StoreClientError('variant description must not be empty')
+    description = trimmed
+  }
+  return { id, name, ...(description === undefined ? {} : { description }) }
+}
+
+export function validateThinkingConfigPayload(payload: unknown): ModelThinkingConfig {
+  if (!isRecord(payload)) throw new StoreClientError('body must be a JSON object')
+  const provider = typeof payload.provider === 'string' ? payload.provider.trim() : ''
+  const model = typeof payload.model === 'string' ? payload.model.trim() : ''
+  if (provider === '') throw new StoreClientError('provider is required')
+  if (model === '') throw new StoreClientError('model is required')
+  if (!Array.isArray(payload.variants) || payload.variants.length === 0) throw new StoreClientError('variants must be a non-empty array')
+  const seen = new Set<string>()
+  const variants = payload.variants.map(variant => {
+    const parsed = parseVariant(variant)
+    if (parsed === undefined) throw new StoreClientError('invalid variant')
+    if (seen.has(parsed.id)) throw new StoreClientError('variant ids must be unique')
+    seen.add(parsed.id)
+    return parsed
+  })
+  let defaultVariant: string | undefined
+  if (payload.defaultVariant !== undefined && payload.defaultVariant !== null) {
+    if (typeof payload.defaultVariant !== 'string') throw new StoreClientError('defaultVariant must be a string')
+    defaultVariant = payload.defaultVariant.trim()
+    if (defaultVariant === '') throw new StoreClientError('defaultVariant must not be empty')
+    if (!seen.has(defaultVariant)) throw new StoreClientError('defaultVariant must be one of the variant ids')
+  }
+  return { provider, model, variants, ...(defaultVariant === undefined ? {} : { defaultVariant }) }
+}
+
+export function validateThinkingConfigPatch(payload: unknown): ModelThinkingConfigPatch {
+  if (!isRecord(payload)) throw new StoreClientError('body must be a JSON object')
+  const patch: ModelThinkingConfigPatch = {}
+  if (payload.variants !== undefined) {
+    if (!Array.isArray(payload.variants) || payload.variants.length === 0) throw new StoreClientError('variants must be a non-empty array')
+    const seen = new Set<string>()
+    patch.variants = payload.variants.map(variant => {
+      const parsed = parseVariant(variant)
+      if (parsed === undefined) throw new StoreClientError('invalid variant')
+      if (seen.has(parsed.id)) throw new StoreClientError('variant ids must be unique')
+      seen.add(parsed.id)
+      return parsed
+    })
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'defaultVariant')) {
+    const raw = payload.defaultVariant
+    if (raw === null || raw === undefined) {
+      patch.defaultVariant = null
+    } else if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (trimmed === '') throw new StoreClientError('defaultVariant must not be empty')
+      patch.defaultVariant = trimmed
+    } else {
+      throw new StoreClientError('defaultVariant must be a string or null')
+    }
+  }
+  return patch
+}
+
+function isStoredModelThinkingConfig(value: unknown): value is ModelThinkingConfig {
+  if (!isRecord(value)) return false
+  if (!isStoredNonEmptyString(value.provider) || !isStoredNonEmptyString(value.model)) return false
+  if (!Array.isArray(value.variants) || value.variants.length === 0) return false
+  const seen = new Set<string>()
+  for (const variant of value.variants) {
+    if (!isRecord(variant) || !isStoredNonEmptyString(variant.id) || !isStoredNonEmptyString(variant.name)) return false
+    if (seen.has(variant.id)) return false
+    seen.add(variant.id)
+    if (variant.description !== undefined && !isStoredNonEmptyString(variant.description)) return false
+  }
+  if (value.defaultVariant !== undefined && !isStoredNonEmptyString(value.defaultVariant)) return false
+  if (value.defaultVariant !== undefined && !seen.has(value.defaultVariant)) return false
+  return true
+}
+
+function hasDuplicateConfigKeys(configs: readonly ModelThinkingConfig[]): boolean {
+  const seen = new Set<string>()
+  for (const config of configs) {
+    const key = config.provider + '\u0000' + config.model
+    if (seen.has(key)) return true
+    seen.add(key)
+  }
+  return false
 }
 
 function parseOptionalString(value: unknown, field: string): string | undefined {
@@ -349,7 +452,15 @@ export class SubagentStore {
         parsed.version !== FORMAT_VERSION ||
         !parsed.profiles.every(isStoredProfile) ||
         hasDuplicateIds(parsed.profiles as SubagentProfile[]) ||
-        (parsed.continuableProfiles !== undefined && !isStoredContinuableProfiles(parsed.continuableProfiles))
+        (parsed.continuableProfiles !== undefined && !isStoredContinuableProfiles(parsed.continuableProfiles)) ||
+        (
+          parsed.modelThinkingConfigs !== undefined &&
+          (
+            !Array.isArray(parsed.modelThinkingConfigs) ||
+            !parsed.modelThinkingConfigs.every(isStoredModelThinkingConfig) ||
+            hasDuplicateConfigKeys(parsed.modelThinkingConfigs as ModelThinkingConfig[])
+          )
+        )
       ) {
         console.warn('[dsh-subagents] profile store contains invalid profile entries; refusing to overwrite ' + this.path)
         return { file: { version: FORMAT_VERSION, profiles: [], continuableProfiles: {} }, corrupt: true }
@@ -401,8 +512,15 @@ export class SubagentStore {
     const { file, corrupt } = this.load()
     this.corrupt = corrupt
     file.continuableProfiles ??= {}
-    const builtins = builtinProfiles()
     let changed = false
+    if (file.modelThinkingConfigs === undefined) {
+      file.modelThinkingConfigs = DEFAULT_THINKING_CONFIGS.map(config => ({
+        ...config,
+        variants: config.variants.map(variant => ({ ...variant })),
+      }))
+      changed = true
+    }
+    const builtins = builtinProfiles()
     for (const builtin of builtins) {
       if (!file.profiles.some(profile => profile.id === builtin.id)) {
         file.profiles.push(builtin)
@@ -545,6 +663,71 @@ export class SubagentStore {
     // read() already saves and notifies only when builtins were merged or stored
     // profiles normalized; corrupt stores remain untouched.
     return this.read().profiles
+  }
+
+  listThinkingConfigs(): ModelThinkingConfig[] {
+    return this.read().modelThinkingConfigs ?? []
+  }
+
+  createThinkingConfig(payload: unknown): ModelThinkingConfig {
+    const config = validateThinkingConfigPayload(payload)
+    const file = this.read()
+    this.assertWritable()
+    const key = config.provider + '\u0000' + config.model
+    if ((file.modelThinkingConfigs ?? []).some(item => item.provider + '\u0000' + item.model === key)) {
+      throw new StoreClientError('thinking config already exists for this provider and model')
+    }
+    file.modelThinkingConfigs ??= []
+    file.modelThinkingConfigs.push(config)
+    this.save(file)
+    this.notify()
+    return config
+  }
+
+  updateThinkingConfig(provider: string, model: string, patch: unknown): ModelThinkingConfig {
+    const normalized = validateThinkingConfigPatch(patch)
+    const file = this.read()
+    const config = (file.modelThinkingConfigs ?? []).find(item => item.provider === provider && item.model === model)
+    if (config === undefined) throw new StoreClientError('thinking config not found')
+    if (Object.keys(normalized).length === 0) return config
+    const defaultVariant = Object.prototype.hasOwnProperty.call(normalized, 'defaultVariant')
+      ? normalized.defaultVariant ?? undefined
+      : config.defaultVariant
+    const variantsChanged = normalized.variants !== undefined && (
+      normalized.variants.length !== config.variants.length ||
+      normalized.variants.some((variant, index) => {
+        const current = config.variants[index]
+        return current === undefined
+          || variant.id !== current.id
+          || variant.name !== current.name
+          || (variant.description ?? undefined) !== (current.description ?? undefined)
+      })
+    )
+    const defaultChanged = Object.prototype.hasOwnProperty.call(normalized, 'defaultVariant')
+      && defaultVariant !== config.defaultVariant
+    if (!variantsChanged && !defaultChanged) return config
+    this.assertWritable()
+    if (normalized.variants !== undefined) config.variants = normalized.variants
+    if (Object.prototype.hasOwnProperty.call(normalized, 'defaultVariant')) {
+      config.defaultVariant = normalized.defaultVariant ?? undefined
+    }
+    if (config.defaultVariant !== undefined && !config.variants.some(variant => variant.id === config.defaultVariant)) {
+      throw new StoreClientError('defaultVariant must be one of the variant ids')
+    }
+    this.save(file)
+    this.notify()
+    return config
+  }
+
+  deleteThinkingConfig(provider: string, model: string): void {
+    const file = this.read()
+    this.assertWritable()
+    const configs = file.modelThinkingConfigs ?? []
+    const index = configs.findIndex(item => item.provider === provider && item.model === model)
+    if (index < 0) throw new StoreClientError('thinking config not found')
+    configs.splice(index, 1)
+    this.save(file)
+    this.notify()
   }
 
   /** Exposed for the tool schema: only enabled profiles are delegatable. */

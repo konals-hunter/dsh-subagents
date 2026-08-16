@@ -9,7 +9,7 @@ import type { SubagentsSectionInjected } from '../src/client/SubagentsSection.ts
 import { SubagentsSectionController } from '../src/client/controller.ts'
 import { zh } from '../src/client/locales.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SubagentProfile } from '../src/protocol.ts'
+import type { ModelThinkingConfig, SubagentProfile } from '../src/protocol.ts'
 import type { SubagentsSectionState } from '../src/client/controller.ts'
 import type { ModelCatalogState } from '../src/client/ModelCatalogController.ts'
 import type { PresetCatalogState } from '../src/client/PresetCatalogController.ts'
@@ -48,7 +48,11 @@ const catalogState: ModelCatalogState = {
     id: 'jiyuan',
     name: 'Jiyuan',
     models: [
-      { id: 'deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731' },
+      {
+        id: 'deepseek-v4-flash-0731',
+        name: 'DeepSeek V4 Flash 0731',
+        reasoning: { efforts: [{ id: 'high', name: 'high' }, { id: 'low', name: 'low' }], defaultEffort: 'high' },
+      },
       { id: 'deepseek-v4-0731', name: 'DeepSeek V4 0731' },
     ],
   }],
@@ -67,8 +71,9 @@ function renderSection(
   overrides: Partial<SubagentsSectionInjected> = {},
   profiles: SubagentProfile[] = [builtinProfile],
   corrupt = false,
+  thinkingConfigs: ModelThinkingConfig[] = [],
 ) {
-  const store = createSnapshotStore({ status: 'ready' as const, profiles, corrupt })
+  const store = createSnapshotStore({ status: 'ready' as const, profiles, thinkingConfigs, corrupt })
   const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
   const presetStore = createSnapshotStore<PresetCatalogState>(presetCatalogState)
   const toolCatalogStore = createSnapshotStore<ToolCatalogState>({ status: 'ready', tools: ['read_file', 'write_file'] })
@@ -90,6 +95,9 @@ function renderSection(
     update: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     restoreBuiltins: vi.fn(async () => {}),
+    createThinkingConfig: vi.fn(async () => {}),
+    updateThinkingConfig: vi.fn(async () => {}),
+    deleteThinkingConfig: vi.fn(async () => {}),
   }
   return { store, catalogStore, presetStore, toolCatalogStore, useSubagents, useModelCatalog, usePresetCatalog, useToolCatalog, ...base, ...overrides }
 }
@@ -116,6 +124,9 @@ function mountSection(injected: ReturnType<typeof renderSection>): { container: 
       update={injected.update}
       remove={injected.remove}
       restoreBuiltins={injected.restoreBuiltins}
+      createThinkingConfig={injected.createThinkingConfig}
+      updateThinkingConfig={injected.updateThinkingConfig}
+      deleteThinkingConfig={injected.deleteThinkingConfig}
     />)
   })
   return { container, root }
@@ -182,6 +193,7 @@ describe('SubagentsSection', () => {
   it('clears the corruption banner after a successful create', async () => {
     const api = {
       listProfiles: async () => ({ profiles: [builtinProfile], corrupt: true }),
+      listThinkingConfigs: async () => ({ configs: [] }),
       createProfile: vi.fn(async () => ({ ...customProfile, id: 'created' })),
       restoreBuiltins: async () => ({
         profiles: [builtinProfile],
@@ -210,6 +222,9 @@ describe('SubagentsSection', () => {
       update: (id, patch) => controller.update(id, patch),
       remove: id => controller.remove(id),
       restoreBuiltins: () => controller.restoreBuiltins(),
+      createThinkingConfig: () => controller.createThinkingConfig({ provider: '', model: '', variants: [] }),
+      updateThinkingConfig: () => controller.updateThinkingConfig('', '', { variants: [] }),
+      deleteThinkingConfig: () => controller.deleteThinkingConfig('', ''),
     }
     const presetStore = createSnapshotStore(presetCatalogState)
     const usePresetCatalog = <T,>(selector: (snapshot: PresetCatalogState) => T): T =>
@@ -350,7 +365,7 @@ describe('SubagentsSection', () => {
       expect(modelRow).toBeDefined()
       await act(async () => { modelRow?.click() })
 
-      expect(update).toHaveBeenCalledWith('custom-1', { modelProvider: 'jiyuan', model: 'deepseek-v4-0731' })
+      expect(update).toHaveBeenCalledWith('custom-1', { modelProvider: 'jiyuan', model: 'deepseek-v4-0731', reasoningEffort: null })
     } finally {
       unmountSection(container, root)
     }
@@ -370,6 +385,128 @@ describe('SubagentsSection', () => {
       await act(async () => { highRow?.click() })
 
       expect(update).toHaveBeenCalledWith('custom-1', { reasoningEffort: 'high' })
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('shows model-specific thinking variants and auto-selects the default on model change', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const modelTrigger = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('jiyuan / deepseek-v4-flash-0731'))
+      await act(async () => { modelTrigger?.click() })
+      const secondModel = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('DeepSeek V4 0731'))
+      await act(async () => { secondModel?.click() })
+      expect(update).toHaveBeenCalledWith('custom-1', expect.objectContaining({ modelProvider: 'jiyuan', model: 'deepseek-v4-0731', reasoningEffort: null }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('adds a thinking config from the management area with a valid provider and model', async () => {
+    const create = vi.fn(async () => {})
+    const injected = renderSection({ createThinkingConfig: create })
+    const { container, root } = mountSection(injected)
+    try {
+      const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增配置')
+      expect(addButton).toBeDefined()
+      await act(async () => { addButton?.click() })
+
+      const modelTrigger = [...container.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === '模型')
+      expect(modelTrigger).toBeDefined()
+      await act(async () => { modelTrigger?.click() })
+      const modelRow = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('DeepSeek V4 0731'))
+      expect(modelRow).toBeDefined()
+      await act(async () => { modelRow?.click() })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存配置')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({
+        provider: 'jiyuan',
+        model: 'deepseek-v4-0731',
+        variants: expect.arrayContaining([
+          expect.objectContaining({ id: 'low', name: 'low' }),
+          expect.objectContaining({ id: 'medium', name: 'medium' }),
+          expect.objectContaining({ id: 'high', name: 'high' }),
+        ]),
+        defaultVariant: 'medium',
+      }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('blocks a thinking config create with a blank provider or model', async () => {
+    const create = vi.fn(async () => {})
+    const injected = renderSection({ createThinkingConfig: create })
+    const { container, root } = mountSection(injected)
+    try {
+      const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增配置')
+      expect(addButton).toBeDefined()
+      await act(async () => { addButton?.click() })
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存配置')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+      expect(create).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('请选择 Provider 和模型')
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('disables the model select when editing a thinking config', async () => {
+    const updateThinkingConfig = vi.fn(async () => {})
+    const thinkingConfig: ModelThinkingConfig = {
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      variants: [{ id: 'high', name: 'high' }],
+      defaultVariant: 'high',
+    }
+    const injected = renderSection({ updateThinkingConfig }, [], false, [thinkingConfig])
+    const { container, root } = mountSection(injected)
+    try {
+      const editButton = [...container.querySelectorAll('button')].find(button => button.textContent === '编辑配置')
+      expect(editButton).toBeDefined()
+      await act(async () => { editButton?.click() })
+
+      const modelTrigger = [...container.querySelectorAll('button')]
+        .find(button => button.textContent?.includes('jiyuan / deepseek-v4-flash-0731') && (button as HTMLButtonElement).disabled)
+      expect(modelTrigger).toBeDefined()
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('saves an edited thinking config', async () => {
+    const updateThinkingConfig = vi.fn(async () => {})
+    const thinkingConfig: ModelThinkingConfig = {
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      variants: [{ id: 'high', name: 'high' }],
+      defaultVariant: 'high',
+    }
+    const injected = renderSection({ updateThinkingConfig }, [], false, [thinkingConfig])
+    const { container, root } = mountSection(injected)
+    try {
+      const editButton = [...container.querySelectorAll('button')].find(button => button.textContent === '编辑配置')
+      expect(editButton).toBeDefined()
+      await act(async () => { editButton?.click() })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存配置')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+
+      expect(updateThinkingConfig).toHaveBeenCalledWith(
+        'jiyuan',
+        'deepseek-v4-flash-0731',
+        expect.objectContaining({
+          variants: [expect.objectContaining({ id: 'high', name: 'high' })],
+          defaultVariant: 'high',
+        }),
+      )
     } finally {
       unmountSection(container, root)
     }

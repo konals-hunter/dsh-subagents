@@ -387,4 +387,35 @@ describe('subagents routes', () => {
     expect(response.status).toBe(500)
     expect((response.json as { error: string }).error).toContain('restore failed')
   })
+
+  it('CRUDs thinking configs through the REST API', async () => {
+    const created = await request('/api/dsh-subagents/thinking-configs', 'POST', {
+      provider: 'stepfun',
+      model: 'step-3.7-flash',
+      variants: [{ id: 'low', name: 'low' }, { id: 'medium', name: 'medium' }],
+      defaultVariant: 'medium',
+    })
+    expect(created.status).toBe(400) // step-3.7-flash already seeded; duplicate rejected
+
+    const custom = await request('/api/dsh-subagents/thinking-configs', 'POST', {
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      variants: [{ id: 'off', name: 'off' }],
+    })
+    expect(custom.status).toBe(201)
+    const query = 'provider=jiyuan&model=deepseek-v4-flash-0731'
+
+    const listed = await request('/api/dsh-subagents/thinking-configs')
+    expect(listed.status).toBe(200)
+    expect((listed.json as { configs: Array<{ provider: string }> }).configs.some(c => c.provider === 'jiyuan')).toBe(true)
+
+    const updated = await request('/api/dsh-subagents/thinking-configs?' + query, 'PUT', {
+      defaultVariant: 'off',
+    })
+    expect(updated.status).toBe(200)
+    expect((updated.json as { config: { defaultVariant?: string } }).config.defaultVariant).toBe('off')
+
+    const deleted = await request('/api/dsh-subagents/thinking-configs?' + query, 'DELETE')
+    expect(deleted.status).toBe(200)
+  })
 })

@@ -12,7 +12,17 @@
 
 .toolbar {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.sectionBlock {
+  margin-top: 24px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 16px;
 }
 
 .empty {

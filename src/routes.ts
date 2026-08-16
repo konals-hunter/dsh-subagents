@@ -5,7 +5,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { SubagentStore } from './store.ts'
-import { StoreClientError, validateProfilePatch, validateProfilePayload } from './store.ts'
+import { StoreClientError, validateProfilePatch, validateProfilePayload, validateThinkingConfigPayload, validateThinkingConfigPatch } from './store.ts'
 import { SUBAGENTS_API } from './protocol.ts'
 
 const MAX_JSON_BODY_BYTES = 64 * 1024
@@ -171,6 +171,56 @@ export function makeRoutes(deps: {
           writeJson(res, 200, { provider, model, inputModalities: info.inputModalities ?? [] })
         } catch (error) {
           writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+        }
+      },
+    },
+    {
+      kind: 'exact',
+      path: SUBAGENTS_API.thinkingConfigs,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) { writeJson(res, 403, { error: 'forbidden: loopback-only' }); return }
+        const method = req.method ?? 'GET'
+        if (method === 'GET') {
+          try {
+            writeJson(res, 200, { configs: store.listThinkingConfigs() })
+          } catch (error) {
+            writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+          }
+          return
+        }
+        if (method === 'POST') {
+          const body = await readJsonBody(req)
+          if (body === BODY_TOO_LARGE) { writeJson(res, 413, { error: 'request body too large' }); return }
+          if (body === undefined) { writeJson(res, 400, { error: 'invalid JSON body' }); return }
+          try {
+            const config = store.createThinkingConfig(validateThinkingConfigPayload(body))
+            writeJson(res, 201, { config })
+          } catch (error) {
+            writeJson(res, error instanceof StoreClientError ? 400 : 500, { error: error instanceof Error ? error.message : String(error) })
+          }
+          return
+        }
+        if (method !== 'PUT' && method !== 'DELETE') { writeJson(res, 405, { error: 'method not allowed: ' + method }); return }
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const provider = queryParam(url, 'provider')
+        const model = queryParam(url, 'model')
+        if (provider === undefined || provider === '' || model === undefined || model === '') {
+          writeJson(res, 400, { error: 'provider and model query parameters are required' })
+          return
+        }
+        try {
+          if (method === 'PUT') {
+            const body = await readJsonBody(req)
+            if (body === BODY_TOO_LARGE) { writeJson(res, 413, { error: 'request body too large' }); return }
+            if (body === undefined) { writeJson(res, 400, { error: 'invalid JSON body' }); return }
+            const config = store.updateThinkingConfig(provider, model, validateThinkingConfigPatch(body))
+            writeJson(res, 200, { config })
+          } else {
+            store.deleteThinkingConfig(provider, model)
+            writeJson(res, 200, { ok: true })
+          }
+        } catch (error) {
+          writeJson(res, error instanceof StoreClientError ? 400 : 500, { error: error instanceof Error ? error.message : String(error) })
         }
       },
     },

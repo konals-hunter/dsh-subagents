@@ -38,6 +38,10 @@ export function apply(ctx: Context): void {
   const store = new SubagentStore()
   store.list()
 
+  // Host service consumed by dsh-remote-web-ui's mobile /m/api channel so the
+  // phone can read Thinking Variant configs without reaching loopback routes.
+  ctx.provide('dsh-subagents', { listThinkingConfigs: () => store.listThinkingConfigs() })
+
   const llm = ctx.get('llm') as LlmDiagnosticFace | undefined
   const { routes } = makeRoutes({ store, tools: ctx.tools, llm })
 
