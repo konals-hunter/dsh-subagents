@@ -9,7 +9,7 @@ import type { SubagentsSectionInjected } from '../src/client/SubagentsSection.ts
 import { SubagentsSectionController } from '../src/client/controller.ts'
 import { zh } from '../src/client/locales.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SubagentProfile } from '../src/protocol.ts'
+import type { ModelThinkingConfig, SubagentProfile } from '../src/protocol.ts'
 import type { SubagentsSectionState } from '../src/client/controller.ts'
 import type { ModelCatalogState } from '../src/client/ModelCatalogController.ts'
 import type { PresetCatalogState } from '../src/client/PresetCatalogController.ts'
@@ -71,8 +71,9 @@ function renderSection(
   overrides: Partial<SubagentsSectionInjected> = {},
   profiles: SubagentProfile[] = [builtinProfile],
   corrupt = false,
+  thinkingConfigs: ModelThinkingConfig[] = [],
 ) {
-  const store = createSnapshotStore({ status: 'ready' as const, profiles, thinkingConfigs: [], corrupt })
+  const store = createSnapshotStore({ status: 'ready' as const, profiles, thinkingConfigs, corrupt })
   const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
   const presetStore = createSnapshotStore<PresetCatalogState>(presetCatalogState)
   const toolCatalogStore = createSnapshotStore<ToolCatalogState>({ status: 'ready', tools: ['read_file', 'write_file'] })
@@ -416,6 +417,29 @@ describe('SubagentsSection', () => {
       expect(saveButton).toBeDefined()
       await act(async () => { saveButton?.click() })
       expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: '', model: '' }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('disables the model select when editing a thinking config', async () => {
+    const updateThinkingConfig = vi.fn(async () => {})
+    const thinkingConfig: ModelThinkingConfig = {
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      variants: [{ id: 'high', name: 'high' }],
+      defaultVariant: 'high',
+    }
+    const injected = renderSection({ updateThinkingConfig }, [], false, [thinkingConfig])
+    const { container, root } = mountSection(injected)
+    try {
+      const editButton = [...container.querySelectorAll('button')].find(button => button.textContent === '编辑配置')
+      expect(editButton).toBeDefined()
+      await act(async () => { editButton?.click() })
+
+      const modelTrigger = [...container.querySelectorAll('button')]
+        .find(button => button.textContent?.includes('jiyuan / deepseek-v4-flash-0731') && (button as HTMLButtonElement).disabled)
+      expect(modelTrigger).toBeDefined()
     } finally {
       unmountSection(container, root)
     }

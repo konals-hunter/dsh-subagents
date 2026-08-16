@@ -447,6 +447,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
                 model={configDraft.model}
                 groups={catalog.groups}
                 status={catalog.status}
+                disabled={configEditor.mode === 'edit'}
                 size="md"
                 ariaLabel={t('form.model')}
                 loadingLabel={t('form.model.loading')}
