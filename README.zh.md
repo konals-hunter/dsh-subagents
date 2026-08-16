@@ -13,13 +13,26 @@ DSH Subagent 配置管理插件：在设置中维护内置/自定义 Subagent，
   默认任务模板、工具过滤、maxTokens、maxDepth、后台模式。
 - 单个 `subagent_profile` 工具带可选 `profile` 参数；不传 profile 时等价于官方
   `subagent` 工具。
+- 可选 `imagePath` 参数：传入图片路径后，子 Agent 会先被要求调用 `read_image`
+  读取图片，让多模态模型（如 Vision）真正“看到”图片。
 - 子 Agent 与官方工具使用同一 `spawn`/`fork` provider，因此会出现在正常
   subagent 列表面板中。
 
 ## 安装
 
+### 本地开发（从代码目录安装）
+
+`<仓库路径>` 是**本机文件系统路径**，不是 GitHub 地址。
+
 ```bash
-dsh plugin --profile web add link:<仓库路径>/dsh-subagents
+dsh plugin --profile web add link:D:/path/to/dsh-subagents
+# 重启 dsh web
+```
+
+### 从 npm 安装（发布后）
+
+```bash
+dsh plugin --profile web add @konals/dsh-subagents
 # 重启 dsh web
 ```
 

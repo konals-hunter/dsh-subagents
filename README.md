@@ -12,12 +12,24 @@ through the native `ctx.subagents` providers.
 - Add, edit, and delete custom profiles; builtin profiles are editable but not deletable.
 - Per-profile model, thinking variant (`reasoningEffort`), persona, prompt template, tool filter, max tokens, max depth, and background mode.
 - One `subagent_profile` tool with an optional `profile` parameter; omitting the profile behaves like the plain `subagent` tool.
+- Optional `imagePath` parameter: when set, the subagent is instructed to call `read_image` first so multimodal models (e.g. Vision) can see the image.
 - Spawned children use the same `spawn`/`fork` providers as the official tool, so they appear in the normal subagent UI.
 
 ## Install
 
+### Local development (from a checkout)
+
+`<repo-path>` is the **local filesystem path** to this plugin directory, not a GitHub URL.
+
 ```bash
-dsh plugin --profile web add link:<repo-path>/dsh-subagents
+dsh plugin --profile web add link:D:/path/to/dsh-subagents
+# restart dsh web
+```
+
+### From the npm registry (after publishing)
+
+```bash
+dsh plugin --profile web add @konals/dsh-subagents
 # restart dsh web
 ```
 
