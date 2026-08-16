@@ -35,8 +35,8 @@ DSH 模型目录（`llm.models`）已经通过 `model.reasoning.efforts` / `mode
   - 切换模型时自动设置 `reasoningEffort` 为默认档位，或清空为“跟随模型默认”。
   - 首次启动（文件不存在或 `modelThinkingConfigs` 字段缺失）自动写入 step-3.7-flash 默认配置。
 - vendor `dsh-remote-web-ui`：
-  - composer `ModelSheet` 拉取 `/api/dsh-subagents/thinking-configs` 并合并到模型目录元数据。
-  - 拉取失败时静默降级，composer 维持现状。
+  - composer `ModelSheet` 通过 vendor 的 `/m/api` 白名单方法 `dshSubagents.thinkingConfigs` 读取 dsh-subagents host 服务提供的手动配置，并合并到模型目录元数据。
+  - 拉取失败或 dsh-subagents 未安装时静默降级，composer 维持现状。
 
 ### 2.2 范围外
 
@@ -196,8 +196,9 @@ thinkingConfigs: '/api/dsh-subagents/thinking-configs'
 export async function listSubagentsThinkingConfigs(): Promise<ModelThinkingConfig[]>
 ```
 
-- 请求 `/api/dsh-subagents/thinking-configs`。
-- 非 2xx、网络错误或 JSON 解析失败时返回 `[]`，不抛错。
+- 通过 mobile 包自己的 `callUnary('dshSubagents.thinkingConfigs', {})` 请求 vendor `/m/api` 白名单通道，而不是直接访问 loopback-only 的 `/api/dsh-subagents/*`。
+- vendor host 半区在 `dispatch` 中调用 dsh-subagents host 服务 `ctx.get('dsh-subagents').listThinkingConfigs()`（延迟解析，避免插件加载顺序问题）。
+- 非 2xx、RPC/网络错误或畸形响应时返回 `[]`，不抛错；畸形 config 条目会被过滤。
 - 类型在 mobile 包内本地定义，避免跨包 value import。
 
 ### 7.2 ModelSheet 合并

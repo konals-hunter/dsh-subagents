@@ -15,7 +15,7 @@
 - `ReasoningEffort` 改为任意非空字符串；`undefined`/`null` 表示跟随模型默认。
 - 手动配置优先于目录元数据；两者都没有时 Subagents 下拉只显示“跟随模型默认”。
 - 首次 seed 只在 `modelThinkingConfigs` 字段缺失时写入；字段已存在（包括 `[]`）不重新 seed。
-- vendor composer 拉取 `/api/dsh-subagents/thinking-configs` 失败时静默降级为 `[]`，不报错。
+- vendor composer 通过 `/m/api` 白名单方法 `dshSubagents.thinkingConfigs` 读取 dsh-subagents host 服务；失败时静默降级为 `[]`，不报错。禁止手机直接访问 loopback-only 的 `/api/dsh-subagents/*`。
 - 所有 `/api/dsh-subagents/*` 路由保持 loopback-only。
 - 提交信息遵循 conventional commits，禁止 emoji。
 
@@ -1347,14 +1347,27 @@ export interface MobileThinkingConfig {
   defaultVariant?: string
 }
 
+function isMobileThinkingConfig(value: unknown): value is MobileThinkingConfig {
+  if (typeof value !== 'object' || value === null) return false
+  const config = value as Partial<MobileThinkingConfig>
+  if (typeof config.provider !== 'string' || config.provider === '') return false
+  if (typeof config.model !== 'string' || config.model === '') return false
+  if (!Array.isArray(config.variants) || config.variants.length === 0) return false
+  const ids = new Set<string>()
+  for (const variant of config.variants) {
+    if (typeof variant !== 'object' || variant === null) return false
+    if (typeof variant.id !== 'string' || variant.id === '' || typeof variant.name !== 'string' || variant.name === '') return false
+    if (ids.has(variant.id)) return false
+    ids.add(variant.id)
+  }
+  if (config.defaultVariant !== undefined && !ids.has(config.defaultVariant)) return false
+  return true
+}
+
 export async function listSubagentsThinkingConfigs(): Promise<MobileThinkingConfig[]> {
   try {
-    const response = await fetch('/api/dsh-subagents/thinking-configs')
-    if (!response.ok) return []
-    const body: unknown = await response.json()
-    if (typeof body !== 'object' || body === null) return []
-    const configs = (body as { configs?: unknown }).configs
-    return Array.isArray(configs) ? configs as MobileThinkingConfig[] : []
+    const value = await callUnary<{ configs?: unknown }>('dshSubagents.thinkingConfigs', {})
+    return Array.isArray(value?.configs) ? value.configs.filter(isMobileThinkingConfig) : []
   } catch {
     return []
   }
