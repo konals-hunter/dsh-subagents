@@ -63,7 +63,7 @@ describe('host wiring', () => {
     apply(ctx as never)
 
     expect(effect).toHaveBeenCalled()
-    expect(registerRoute).toHaveBeenCalledTimes(4)
+    expect(registerRoute).toHaveBeenCalledTimes(5)
     expect(registerTool).toHaveBeenCalled()
     expect(on).toHaveBeenCalledWith('agent/request', expect.any(Function))
     expect(on).toHaveBeenCalledWith('agent/created', expect.any(Function))
