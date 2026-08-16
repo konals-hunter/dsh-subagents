@@ -11,6 +11,7 @@ import { zh } from '../src/client/locales.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubagentProfile } from '../src/protocol.ts'
 import type { SubagentsSectionState } from '../src/client/controller.ts'
+import type { ModelCatalogState } from '../src/client/ModelCatalogController.ts'
 
 const builtinProfile: SubagentProfile = {
   id: 'explore',
@@ -39,23 +40,40 @@ const customProfile: SubagentProfile = {
   updatedAt: 2,
 }
 
+const catalogState: ModelCatalogState = {
+  status: 'ready',
+  groups: [{
+    id: 'jiyuan',
+    name: 'Jiyuan',
+    models: [
+      { id: 'deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731' },
+      { id: 'deepseek-v4-0731', name: 'DeepSeek V4 0731' },
+    ],
+  }],
+  failures: [],
+}
+
 function renderSection(
   overrides: Partial<SubagentsSectionInjected> = {},
   profiles: SubagentProfile[] = [builtinProfile],
   corrupt = false,
 ) {
   const store = createSnapshotStore({ status: 'ready' as const, profiles, corrupt })
+  const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
   const useSubagents = <T,>(selector: (snapshot: SubagentsSectionState) => T): T =>
     useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
+  const useModelCatalog = <T,>(selector: (snapshot: ModelCatalogState) => T): T =>
+    useSyncExternalStore(catalogStore.subscribe, () => selector(catalogStore.getSnapshot()))
   const base: SubagentsSectionInjected = {
-    hooks: { subagents: store },
+    hooks: { subagents: store, modelCatalog: catalogStore },
     load: vi.fn(async () => {}),
+    loadModels: vi.fn(async () => {}),
     create: vi.fn(async () => {}),
     update: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     restoreBuiltins: vi.fn(async () => {}),
   }
-  return { store, useSubagents, ...base, ...overrides }
+  return { store, catalogStore, useSubagents, useModelCatalog, ...base, ...overrides }
 }
 
 function mountSection(injected: ReturnType<typeof renderSection>): { container: HTMLDivElement; root: ReturnType<typeof createRoot> } {
@@ -65,11 +83,13 @@ function mountSection(injected: ReturnType<typeof renderSection>): { container: 
   act(() => {
     root.render(<SubagentsSection
       useSubagents={injected.useSubagents}
+      useModelCatalog={injected.useModelCatalog}
       useSessions={selector => selector({} as never)}
       useWorkspaces={selector => selector({} as never)}
       t={key => (zh as Record<string, string>)[key]}
       close={vi.fn()}
       load={injected.load}
+      loadModels={injected.loadModels}
       create={injected.create}
       update={injected.update}
       remove={injected.remove}
@@ -150,17 +170,21 @@ describe('SubagentsSection', () => {
     const controller = new SubagentsSectionController(api as never)
     await controller.load()
     const store = controller.store
+    const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
     const useSubagents = <T,>(selector: (snapshot: SubagentsSectionState) => T): T =>
       useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
+    const useModelCatalog = <T,>(selector: (snapshot: ModelCatalogState) => T): T =>
+      useSyncExternalStore(catalogStore.subscribe, () => selector(catalogStore.getSnapshot()))
     const injected: SubagentsSectionInjected = {
-      hooks: { subagents: store },
+      hooks: { subagents: store, modelCatalog: catalogStore },
       load: async () => {},
+      loadModels: async () => {},
       create: payload => controller.create(payload),
       update: (id, patch) => controller.update(id, patch),
       remove: id => controller.remove(id),
       restoreBuiltins: () => controller.restoreBuiltins(),
     }
-    const { container, root } = mountSection({ ...injected, store, useSubagents } as never)
+    const { container, root } = mountSection({ ...injected, store, useSubagents, useModelCatalog } as never)
     try {
       expect(container.textContent).toContain('配置文件已损坏')
       const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增 Subagent')
@@ -239,15 +263,18 @@ describe('SubagentsSection', () => {
       expect(editButton).toBeDefined()
       await act(async () => { editButton?.click() })
 
-      const reasoningEffort = fieldByLabel(container, 'Thinking Variant') as HTMLSelectElement
+      const effortTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === 'high' && !button.hasAttribute('aria-label'))
       const maxTokens = fieldByLabel(container, '最大输出 Tokens') as HTMLInputElement
       const maxDepth = fieldByLabel(container, '最大委派深度') as HTMLInputElement
-      expect(reasoningEffort).not.toBeNull()
+      expect(effortTrigger).toBeDefined()
       expect(maxTokens).not.toBeNull()
       expect(maxDepth).not.toBeNull()
 
+      await act(async () => { effortTrigger?.click() })
+      const defaultEffort = [...container.querySelectorAll('button')].find(button => button.textContent === '默认')
+      expect(defaultEffort).toBeDefined()
       await act(async () => {
-        changeField(reasoningEffort, '')
+        defaultEffort?.click()
         changeField(maxTokens, '')
         changeField(maxDepth, '')
       })
@@ -261,6 +288,58 @@ describe('SubagentsSection', () => {
         maxTokens: null,
         maxDepth: null,
       }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('toggles a profile enabled state from the list quick action', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const switchButton = container.querySelector('button[role="switch"]') as HTMLButtonElement | null
+      expect(switchButton).not.toBeNull()
+      await act(async () => { switchButton?.click() })
+      expect(update).toHaveBeenCalledWith('custom-1', { enabled: false })
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('switches a profile model from the list quick action', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const modelTrigger = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('jiyuan / deepseek-v4-flash-0731'))
+      expect(modelTrigger).toBeDefined()
+      await act(async () => { modelTrigger?.click() })
+
+      const modelRow = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('DeepSeek V4 0731'))
+      expect(modelRow).toBeDefined()
+      await act(async () => { modelRow?.click() })
+
+      expect(update).toHaveBeenCalledWith('custom-1', { modelProvider: 'jiyuan', model: 'deepseek-v4-0731' })
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('changes the thinking variant from the list quick action', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const effortTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === '默认')
+      expect(effortTrigger).toBeDefined()
+      await act(async () => { effortTrigger?.click() })
+
+      const highRow = [...container.querySelectorAll('button')].find(button => button.textContent === 'high')
+      expect(highRow).toBeDefined()
+      await act(async () => { highRow?.click() })
+
+      expect(update).toHaveBeenCalledWith('custom-1', { reasoningEffort: 'high' })
     } finally {
       unmountSection(container, root)
     }

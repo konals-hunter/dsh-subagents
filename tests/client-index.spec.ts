@@ -8,6 +8,13 @@ describe('client apply registration', () => {
     const slotsInject = vi.fn()
     const slotsRegister = vi.fn(() => 'registered')
     const effect = vi.fn((callback: () => void) => callback())
+    const get = vi.fn(() => ({
+      api: {
+        llm: {
+          models: vi.fn(async () => ({ result: { ok: true, value: { groups: [], failures: [] } } })),
+        },
+      },
+    }))
     const ctx = {
       effect,
       locale: { register: localeRegister },
@@ -15,6 +22,7 @@ describe('client apply registration', () => {
         inject: slotsInject,
         register: slotsRegister,
       },
+      get,
     }
 
     apply(ctx as never)

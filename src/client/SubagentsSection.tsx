@@ -1,14 +1,19 @@
 /**
- * Settings section for Subagents: list, inline edit form, add custom, delete
- * custom, and restore builtins.
+ * Settings section for Subagents: list, inline quick actions, add/edit form,
+ * delete custom, and restore builtins.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the settings-surface SlotMap merge (settings.section).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SubagentProfile, SubagentProfilePatch, SubagentProfilePayload, ToolFilter } from '../protocol.ts'
 import type { SubagentsSectionState } from './controller.ts'
+import type { ModelCatalogState } from './ModelCatalogController.ts'
+import { ModelSelect } from './ModelSelect.tsx'
+import { EffortSelect, type EffortOption } from './EffortSelect.tsx'
+import { Switch } from './Switch.tsx'
 import { NS } from './locales.ts'
 import css from './subagents.module.css'
 
@@ -17,8 +22,11 @@ export interface SubagentsSectionInjected {
   hooks: {
     /** Page snapshot bound by the renderer as useSubagents. */
     subagents: SnapshotStore<SubagentsSectionState>
+    /** Host model catalog snapshot bound by the renderer as useModelCatalog. */
+    modelCatalog: SnapshotStore<ModelCatalogState>
   }
   load: () => Promise<void>
+  loadModels: () => Promise<void>
   create: (payload: SubagentProfilePayload) => Promise<void>
   update: (id: string, patch: SubagentProfilePatch) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -94,14 +102,25 @@ function normalizeToolFilterDraft(value: ToolFilter | null | undefined): ToolFil
  * @returns the section.
  */
 export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
-  const { useSubagents, t, load, create, update, remove, restoreBuiltins } = props
+  const { useSubagents, useModelCatalog, t, load, loadModels, create, update, remove, restoreBuiltins } = props
   const state = useSubagents(snapshot => snapshot)
+  const catalog = useModelCatalog(snapshot => snapshot)
   const [editing, setEditing] = useState<{ mode: 'new' } | { mode: 'edit'; profile: SubagentProfile } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => { void loadModels() }, [loadModels])
+
+  const effortOptions = useMemo<EffortOption[]>(() => [
+    { value: null, label: t('form.reasoningEffort.none') },
+    { value: 'off', label: 'off' },
+    { value: 'low', label: 'low' },
+    { value: 'medium', label: 'medium' },
+    { value: 'high', label: 'high' },
+    { value: 'max', label: 'max' },
+  ], [t])
 
   if (state.status === 'error') {
     return <div className={css.section}><p className={css.error}>{t('error.load')} {state.error}</p></div>
@@ -171,13 +190,21 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
+  const handleQuickUpdate = async (id: string, patch: SubagentProfilePatch): Promise<void> => {
+    setError(null)
+    try {
+      await update(id, patch)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
 
   return (
     <div className={css.section}>
       {state.corrupt === true && <p className={css.error}>{state.error ?? t('corrupt.banner')}</p>}
       <div className={css.toolbar}>
-        <button type="button" className={css.primary} onClick={openNew}>{t('list.add')}</button>
-        <button type="button" className={css.secondary} onClick={() => { void handleRestore() }}>{t('list.restore')}</button>
+        <Button variant="primary" size="md" onClick={openNew}>{t('list.add')}</Button>
+        <Button variant="outline" size="md" onClick={() => { void handleRestore() }}>{t('list.restore')}</Button>
       </div>
       {error !== null && editing === null && <p className={css.error}>{t('list.error')}: {error}</p>}
       {state.profiles.length === 0
@@ -187,113 +214,187 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
             {state.profiles.map(profile => (
               <div key={profile.id} className={css.card}>
                 <div className={css.cardHeader}>
-                  <strong>{profile.name}</strong>
-                  <span className={profile.builtin ? css.builtin : css.custom}>
-                    {profile.builtin ? t('list.builtin') : t('list.custom')}
-                  </span>
-                  <span className={profile.enabled ? css.enabled : css.disabled}>
-                    {profile.enabled ? t('list.enabled') : t('list.disabled')}
-                  </span>
+                  <div className={css.cardIdentity}>
+                    <strong className={css.cardName}>{profile.name}</strong>
+                    <Pill className={profile.builtin ? css.badgeBuiltin : css.badgeCustom}>
+                      {profile.builtin ? t('list.builtin') : t('list.custom')}
+                    </Pill>
+                    <span className={css.cardId}>{profile.id}</span>
+                  </div>
+                  <div className={css.quickActions}>
+                    <Switch
+                      checked={profile.enabled}
+                      ariaLabel={`${t('list.enabled')} ${profile.name}`}
+                      onChange={enabled => { void handleQuickUpdate(profile.id, { enabled }) }}
+                    />
+                    <ModelSelect
+                      modelProvider={profile.modelProvider}
+                      model={profile.model}
+                      groups={catalog.groups}
+                      status={catalog.status}
+                      ariaLabel={`${t('form.model')} ${profile.name}`}
+                      onSelect={(modelProvider, model) => { void handleQuickUpdate(profile.id, { modelProvider, model }) }}
+                    />
+                    <EffortSelect
+                      value={profile.reasoningEffort}
+                      options={effortOptions}
+                      ariaLabel={`${t('form.reasoningEffort')} ${profile.name}`}
+                      onChange={reasoningEffort => { void handleQuickUpdate(profile.id, { reasoningEffort }) }}
+                    />
+                    <div className={css.rowActions}>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(profile)}>{t('list.edit')}</Button>
+                      {!profile.builtin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={css.dangerButton}
+                          onClick={() => { void handleRemove(profile.id) }}
+                        >
+                          {t('list.delete')}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className={css.cardBody}>
-                  <span>{profile.id}</span>
-                  <span>{profile.modelProvider} / {profile.model}</span>
-                  <span>{profile.reasoningEffort ?? t('form.reasoningEffort.none')}</span>
-                </div>
-                <div className={css.cardActions}>
-                  <button type="button" onClick={() => openEdit(profile)}>{t('list.edit')}</button>
-                  {!profile.builtin && (
-                    <button type="button" onClick={() => { void handleRemove(profile.id) }}>{t('list.delete')}</button>
-                  )}
-                </div>
+                {profile.description !== '' && (
+                  <p className={css.cardDescription}>{profile.description}</p>
+                )}
               </div>
             ))}
           </div>
         )}
       {editing !== null && draft !== null && (
-        <div className={css.form}>
-          <h3>{editing.mode === 'new' ? t('form.newTitle') : t('form.title')}</h3>
+        <div className={css.editor}>
+          <h3 className={css.editorTitle}>{editing.mode === 'new' ? t('form.newTitle') : t('form.title')}</h3>
           {error !== null && <p className={css.error}>{t('form.error')}: {error}</p>}
           <label className={css.field}>
-            <span>{t('form.id')}</span>
-            <input
+            <span className={css.fieldLabel}>{t('form.id')}</span>
+            <Input
               value={draft.id}
               disabled={editing.mode === 'edit'}
+              className={css.inputWrap}
               onChange={event => setDraft(current => current === null ? null : { ...current, id: event.target.value })}
             />
           </label>
           <label className={css.field}>
-            <span>{t('form.name')}</span>
-            <input value={draft.name ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, name: event.target.value })} />
+            <span className={css.fieldLabel}>{t('form.name')}</span>
+            <Input
+              value={draft.name ?? ''}
+              className={css.inputWrap}
+              onChange={event => setDraft(current => current === null ? null : { ...current, name: event.target.value })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.description')}</span>
-            <textarea value={draft.description ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, description: event.target.value })} />
+            <span className={css.fieldLabel}>{t('form.description')}</span>
+            <textarea
+              className={css.input}
+              value={draft.description ?? ''}
+              onChange={event => setDraft(current => current === null ? null : { ...current, description: event.target.value })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.enabled')}</span>
-            <input type="checkbox" checked={draft.enabled ?? true} onChange={event => setDraft(current => current === null ? null : { ...current, enabled: event.target.checked })} />
+            <span className={css.fieldLabel}>{t('form.enabled')}</span>
+            <Switch
+              checked={draft.enabled ?? true}
+              label={draft.enabled ?? true ? t('list.enabled') : t('list.disabled')}
+              onChange={enabled => setDraft(current => current === null ? null : { ...current, enabled })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.provider')}</span>
-            <select value={draft.provider ?? 'spawn'} onChange={event => setDraft(current => current === null ? null : { ...current, provider: event.target.value as 'spawn' | 'fork' })}>
+            <span className={css.fieldLabel}>{t('form.provider')}</span>
+            <select
+              className={css.input}
+              value={draft.provider ?? 'spawn'}
+              onChange={event => setDraft(current => current === null ? null : { ...current, provider: event.target.value as 'spawn' | 'fork' })}
+            >
               <option value="spawn">spawn</option>
               <option value="fork">fork</option>
             </select>
           </label>
           <label className={css.field}>
-            <span>{t('form.modelProvider')}</span>
-            <input value={draft.modelProvider ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, modelProvider: event.target.value })} />
+            <span className={css.fieldLabel}>{t('form.model')}</span>
+            <ModelSelect
+              modelProvider={draft.modelProvider ?? ''}
+              model={draft.model ?? ''}
+              groups={catalog.groups}
+              status={catalog.status}
+              size="md"
+              onSelect={(modelProvider, model) => setDraft(current => current === null ? null : { ...current, modelProvider, model })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.model')}</span>
-            <input value={draft.model ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, model: event.target.value })} />
+            <span className={css.fieldLabel}>{t('form.reasoningEffort')}</span>
+            <EffortSelect
+              value={draft.reasoningEffort ?? null}
+              options={effortOptions}
+              size="md"
+              onChange={reasoningEffort => setDraft(current => current === null ? null : { ...current, reasoningEffort })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.reasoningEffort')}</span>
-            <select value={draft.reasoningEffort ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, reasoningEffort: event.target.value === '' ? null : event.target.value as SubagentProfilePayload['reasoningEffort'] })}>
-              <option value="">{t('form.reasoningEffort.none')}</option>
-              <option value="off">off</option>
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
-              <option value="max">max</option>
-            </select>
+            <span className={css.fieldLabel}>{t('form.maxTokens')}</span>
+            <Input
+              type="number"
+              value={draft.maxTokens ?? ''}
+              className={css.inputWrap}
+              onChange={event => setDraft(current => current === null ? null : { ...current, maxTokens: event.target.value === '' ? null : Number(event.target.value) })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.maxTokens')}</span>
-            <input type="number" value={draft.maxTokens ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, maxTokens: event.target.value === '' ? null : Number(event.target.value) })} />
+            <span className={css.fieldLabel}>{t('form.maxDepth')}</span>
+            <Input
+              type="number"
+              value={draft.maxDepth ?? ''}
+              className={css.inputWrap}
+              onChange={event => setDraft(current => current === null ? null : { ...current, maxDepth: event.target.value === '' ? null : Number(event.target.value) })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.maxDepth')}</span>
-            <input type="number" value={draft.maxDepth ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, maxDepth: event.target.value === '' ? null : Number(event.target.value) })} />
+            <span className={css.fieldLabel}>{t('form.persona')}</span>
+            <textarea
+              className={css.input}
+              value={draft.persona ?? ''}
+              onChange={event => setDraft(current => current === null ? null : { ...current, persona: event.target.value })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.persona')}</span>
-            <textarea value={draft.persona ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, persona: event.target.value })} />
+            <span className={css.fieldLabel}>{t('form.promptTemplate')}</span>
+            <textarea
+              className={css.input}
+              value={draft.promptTemplate ?? ''}
+              onChange={event => setDraft(current => current === null ? null : { ...current, promptTemplate: event.target.value })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.promptTemplate')}</span>
-            <textarea value={draft.promptTemplate ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, promptTemplate: event.target.value })} />
+            <span className={css.fieldLabel}>{t('form.toolFilterAllow')}</span>
+            <Input
+              value={draft.toolFilter?.allow?.join(', ') ?? ''}
+              className={css.inputWrap}
+              onChange={event => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, allow: parseCommaList(event.target.value) } })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.toolFilterAllow')}</span>
-            <input value={draft.toolFilter?.allow?.join(', ') ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, allow: parseCommaList(event.target.value) } })} />
+            <span className={css.fieldLabel}>{t('form.toolFilterDeny')}</span>
+            <Input
+              value={draft.toolFilter?.deny?.join(', ') ?? ''}
+              className={css.inputWrap}
+              onChange={event => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, deny: parseCommaList(event.target.value) } })}
+            />
           </label>
           <label className={css.field}>
-            <span>{t('form.toolFilterDeny')}</span>
-            <input value={draft.toolFilter?.deny?.join(', ') ?? ''} onChange={event => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, deny: parseCommaList(event.target.value) } })} />
-          </label>
-          <label className={css.field}>
-            <span>{t('form.backgroundMode')}</span>
-            <select value={draft.backgroundMode ?? 'one-shot'} onChange={event => setDraft(current => current === null ? null : { ...current, backgroundMode: event.target.value as 'one-shot' | 'continuable' })}>
+            <span className={css.fieldLabel}>{t('form.backgroundMode')}</span>
+            <select
+              className={css.input}
+              value={draft.backgroundMode ?? 'one-shot'}
+              onChange={event => setDraft(current => current === null ? null : { ...current, backgroundMode: event.target.value as 'one-shot' | 'continuable' })}
+            >
               <option value="one-shot">one-shot</option>
               <option value="continuable">continuable</option>
             </select>
           </label>
-          <div className={css.actions}>
-            <button type="button" disabled={saving} onClick={() => { void save() }}>{saving ? '...' : t('form.save')}</button>
-            <button type="button" disabled={saving} onClick={close}>{t('form.cancel')}</button>
+          <div className={css.editorActions}>
+            <Button variant="primary" size="md" disabled={saving} onClick={() => { void save() }}>{saving ? '...' : t('form.save')}</Button>
+            <Button variant="outline" size="md" disabled={saving} onClick={close}>{t('form.cancel')}</Button>
           </div>
         </div>
       )}
