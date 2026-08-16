@@ -4,6 +4,8 @@ DSH subagent profile manager: a Settings "Subagents" page for builtin/custom
 subagent definitions plus a `subagent_profile` model tool that spawns children
 through the native `ctx.subagents` providers.
 
+![dsh-subagents settings screenshot](screenshots/ScreenShot_2026-08-16_130641_672.png)
+
 ## Features
 
 - Builtin profiles: Explore, General, Vision.

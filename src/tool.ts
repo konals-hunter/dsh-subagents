@@ -24,6 +24,13 @@ export function joinPrompt(template: string | undefined, prompt: string): string
   return trimmed === '' ? prompt : trimmed + '\n\n' + prompt
 }
 
+/** Build the image analysis instruction prepended when `imagePath` is provided. */
+export function buildImageInstruction(imagePath: string | undefined): string {
+  if (typeof imagePath !== 'string' || imagePath.trim() === '') return ''
+  const path = imagePath.trim()
+  return `You are analyzing the image at "${path}".\nFirst call the read_image tool with file_path "${path}" to load the image into your context, then complete the requested task based on the image.`
+}
+
 /**
  * Resolve the model's call into the fields used to start a child. Pure and
  * testable; execute() applies these to ctx.subagents.
@@ -32,7 +39,7 @@ export function joinPrompt(template: string | undefined, prompt: string): string
  * @returns the final prompt and child request fields.
  */
 export function resolveProfileRequest(
-  args: { profile?: string; prompt: string },
+  args: { profile?: string; prompt: string; imagePath?: string },
   profile: SubagentProfile | undefined,
 ): {
   prompt: string
@@ -41,9 +48,13 @@ export function resolveProfileRequest(
   toolFilter?: ToolFilter
   maxDepth?: number
 } {
-  const prompt = profile === undefined
+  const imageInstruction = buildImageInstruction(args.imagePath)
+  const basePrompt = profile === undefined
     ? args.prompt
     : joinPrompt(profile.promptTemplate, args.prompt)
+  const prompt = imageInstruction === ''
+    ? basePrompt
+    : imageInstruction + '\n\n' + basePrompt
   const agentOptions: SubagentProfileAgentOptions = {
     ...profile === undefined ? {} : {
       provider: profile.modelProvider,
@@ -91,6 +102,7 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
     description: 'Delegate a task to a maintained subagent profile (Explore, General, Vision, or a custom profile). ' +
       'Each profile fixes a model, thinking variant, persona, and optional tool restrictions. ' +
       'When `profile` is omitted this behaves like the plain subagent tool using the parent defaults. ' +
+      'When the task involves an image, pass `imagePath` so the subagent reads it with read_image first. ' +
       'Spawned children appear in the normal subagent UI.',
     parameters: {
       ...(enabledIds.length > 0 ? {
@@ -104,6 +116,10 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
         type: 'string',
         required: true,
         description: 'The complete, self-contained task for the subagent.',
+      },
+      imagePath: {
+        type: 'string',
+        description: 'Optional filesystem path to an image. When provided, the subagent is instructed to call read_image with this path before completing the task.',
       },
       run_in_background: {
         type: 'boolean',
@@ -152,7 +168,7 @@ export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Conte
       },
     },
     isConcurrencySafe: () => true,
-    async execute(args: { profile?: string; prompt: string; run_in_background?: boolean }, exec) {
+    async execute(args: { profile?: string; prompt: string; imagePath?: string; run_in_background?: boolean }, exec) {
       const parent = exec.agent
       if (!parent) throw new Error('subagent_profile requires a calling agent')
       const profile = args.profile === undefined ? undefined : store.find(args.profile)

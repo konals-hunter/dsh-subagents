@@ -12,6 +12,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubagentProfile } from '../src/protocol.ts'
 import type { SubagentsSectionState } from '../src/client/controller.ts'
 import type { ModelCatalogState } from '../src/client/ModelCatalogController.ts'
+import type { ToolCatalogState } from '../src/client/ToolCatalogController.ts'
 
 const builtinProfile: SubagentProfile = {
   id: 'explore',
@@ -60,20 +61,24 @@ function renderSection(
 ) {
   const store = createSnapshotStore({ status: 'ready' as const, profiles, corrupt })
   const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
+  const toolCatalogStore = createSnapshotStore<ToolCatalogState>({ status: 'ready', tools: ['read_file', 'write_file'] })
   const useSubagents = <T,>(selector: (snapshot: SubagentsSectionState) => T): T =>
     useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
   const useModelCatalog = <T,>(selector: (snapshot: ModelCatalogState) => T): T =>
     useSyncExternalStore(catalogStore.subscribe, () => selector(catalogStore.getSnapshot()))
+  const useToolCatalog = <T,>(selector: (snapshot: ToolCatalogState) => T): T =>
+    useSyncExternalStore(toolCatalogStore.subscribe, () => selector(toolCatalogStore.getSnapshot()))
   const base: SubagentsSectionInjected = {
-    hooks: { subagents: store, modelCatalog: catalogStore },
+    hooks: { subagents: store, modelCatalog: catalogStore, toolCatalog: toolCatalogStore },
     load: vi.fn(async () => {}),
     loadModels: vi.fn(async () => {}),
+    loadTools: vi.fn(async () => {}),
     create: vi.fn(async () => {}),
     update: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     restoreBuiltins: vi.fn(async () => {}),
   }
-  return { store, catalogStore, useSubagents, useModelCatalog, ...base, ...overrides }
+  return { store, catalogStore, toolCatalogStore, useSubagents, useModelCatalog, useToolCatalog, ...base, ...overrides }
 }
 
 function mountSection(injected: ReturnType<typeof renderSection>): { container: HTMLDivElement; root: ReturnType<typeof createRoot> } {
@@ -84,12 +89,14 @@ function mountSection(injected: ReturnType<typeof renderSection>): { container: 
     root.render(<SubagentsSection
       useSubagents={injected.useSubagents}
       useModelCatalog={injected.useModelCatalog}
+      useToolCatalog={injected.useToolCatalog}
       useSessions={selector => selector({} as never)}
       useWorkspaces={selector => selector({} as never)}
       t={key => (zh as Record<string, string>)[key]}
       close={vi.fn()}
       load={injected.load}
       loadModels={injected.loadModels}
+      loadTools={injected.loadTools}
       create={injected.create}
       update={injected.update}
       remove={injected.remove}
@@ -171,20 +178,24 @@ describe('SubagentsSection', () => {
     await controller.load()
     const store = controller.store
     const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
+    const toolCatalogStore = createSnapshotStore<ToolCatalogState>({ status: 'ready', tools: ['read_file', 'write_file'] })
     const useSubagents = <T,>(selector: (snapshot: SubagentsSectionState) => T): T =>
       useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
     const useModelCatalog = <T,>(selector: (snapshot: ModelCatalogState) => T): T =>
       useSyncExternalStore(catalogStore.subscribe, () => selector(catalogStore.getSnapshot()))
+    const useToolCatalog = <T,>(selector: (snapshot: ToolCatalogState) => T): T =>
+      useSyncExternalStore(toolCatalogStore.subscribe, () => selector(toolCatalogStore.getSnapshot()))
     const injected: SubagentsSectionInjected = {
-      hooks: { subagents: store, modelCatalog: catalogStore },
+      hooks: { subagents: store, modelCatalog: catalogStore, toolCatalog: toolCatalogStore },
       load: async () => {},
       loadModels: async () => {},
+      loadTools: async () => {},
       create: payload => controller.create(payload),
       update: (id, patch) => controller.update(id, patch),
       remove: id => controller.remove(id),
       restoreBuiltins: () => controller.restoreBuiltins(),
     }
-    const { container, root } = mountSection({ ...injected, store, useSubagents, useModelCatalog } as never)
+    const { container, root } = mountSection({ ...injected, store, useSubagents, useModelCatalog, useToolCatalog } as never)
     try {
       expect(container.textContent).toContain('配置文件已损坏')
       const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增 Subagent')
@@ -340,6 +351,33 @@ describe('SubagentsSection', () => {
       await act(async () => { highRow?.click() })
 
       expect(update).toHaveBeenCalledWith('custom-1', { reasoningEffort: 'high' })
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('toggles tool filter allow via the multi-select and sends null when cleared', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const editButton = [...container.querySelectorAll('button')].find(button => button.textContent === '编辑')
+      expect(editButton).toBeDefined()
+      await act(async () => { editButton?.click() })
+
+      const allowTrigger = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Select tools') && (button as HTMLButtonElement).getAttribute('aria-label')?.includes('工具过滤 Allow'))
+      expect(allowTrigger).toBeDefined()
+      await act(async () => { allowTrigger?.click() })
+
+      const readFileRow = [...container.querySelectorAll('button')].find(button => button.textContent === 'read_file')
+      expect(readFileRow).toBeDefined()
+      await act(async () => { readFileRow?.click() })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+
+      expect(update).toHaveBeenCalledWith('custom-1', expect.objectContaining({ toolFilter: { allow: ['read_file'] } }))
     } finally {
       unmountSection(container, root)
     }

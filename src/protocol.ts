@@ -58,4 +58,5 @@ export type SubagentProfilePatch = Partial<SubagentProfilePayload>
 export const SUBAGENTS_API = {
   profiles: '/api/dsh-subagents/profiles',
   restoreBuiltins: '/api/dsh-subagents/profiles/restore-builtins',
+  tools: '/api/dsh-subagents/tools',
 } as const

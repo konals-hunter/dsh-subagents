@@ -60,8 +60,8 @@ function queryParam(url: URL, name: string): string | undefined {
 }
 
 /** Build every /api/dsh-subagents route. */
-export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[] } {
-  const { store } = deps
+export function makeRoutes(deps: { store: SubagentStore; tools: { schemas(): { name: string }[] } }): { routes: WebRoute[] } {
+  const { store, tools } = deps
 
   const routes: WebRoute[] = [
     {
@@ -122,6 +122,19 @@ export function makeRoutes(deps: { store: SubagentStore }): { routes: WebRoute[]
           writeJson(res, 200, corrupt
             ? { profiles, corrupt: true, error: 'store file is corrupt; manual recovery required' }
             : { profiles, corrupt: false })
+        } catch (error) {
+          writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+        }
+      },
+    },
+    {
+      kind: 'exact',
+      path: SUBAGENTS_API.tools,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) { writeJson(res, 403, { error: 'forbidden: loopback-only' }); return }
+        if (req.method !== 'GET') { writeJson(res, 405, { error: 'method not allowed: ' + (req.method ?? '') }); return }
+        try {
+          writeJson(res, 200, { tools: tools.schemas().map(schema => schema.name) })
         } catch (error) {
           writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
         }

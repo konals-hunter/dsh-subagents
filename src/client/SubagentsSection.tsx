@@ -11,10 +11,12 @@ import { Button, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SubagentProfile, SubagentProfilePatch, SubagentProfilePayload, ToolFilter } from '../protocol.ts'
 import type { SubagentsSectionState } from './controller.ts'
 import type { ModelCatalogState } from './ModelCatalogController.ts'
+import type { ToolCatalogState } from './ToolCatalogController.ts'
 import { ModelSelect } from './ModelSelect.tsx'
 import { EffortSelect, type EffortOption } from './EffortSelect.tsx'
 import { MenuSelect } from './MenuSelect.tsx'
 import { Switch } from './Switch.tsx'
+import { ToolMultiSelect } from './ToolMultiSelect.tsx'
 import { NS } from './locales.ts'
 import css from './subagents.module.css'
 
@@ -25,9 +27,12 @@ export interface SubagentsSectionInjected {
     subagents: SnapshotStore<SubagentsSectionState>
     /** Host model catalog snapshot bound by the renderer as useModelCatalog. */
     modelCatalog: SnapshotStore<ModelCatalogState>
+    /** Host tool catalog snapshot bound by the renderer as useToolCatalog. */
+    toolCatalog: SnapshotStore<ToolCatalogState>
   }
   load: () => Promise<void>
   loadModels: () => Promise<void>
+  loadTools: () => Promise<void>
   create: (payload: SubagentProfilePayload) => Promise<void>
   update: (id: string, patch: SubagentProfilePatch) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -103,9 +108,10 @@ function normalizeToolFilterDraft(value: ToolFilter | null | undefined): ToolFil
  * @returns the section.
  */
 export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
-  const { useSubagents, useModelCatalog, t, load, loadModels, create, update, remove, restoreBuiltins } = props
+  const { useSubagents, useModelCatalog, useToolCatalog, t, load, loadModels, loadTools, create, update, remove, restoreBuiltins } = props
   const state = useSubagents(snapshot => snapshot)
   const catalog = useModelCatalog(snapshot => snapshot)
+  const toolCatalog = useToolCatalog(snapshot => snapshot)
   const [editing, setEditing] = useState<{ mode: 'new' } | { mode: 'edit'; profile: SubagentProfile } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
@@ -113,6 +119,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
 
   useEffect(() => { void load() }, [load])
   useEffect(() => { void loadModels() }, [loadModels])
+  useEffect(() => { void loadTools() }, [loadTools])
 
   const effortOptions = useMemo<EffortOption[]>(() => [
     { value: null, label: t('form.reasoningEffort.none') },
@@ -380,18 +387,22 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           </label>
           <label className={css.field}>
             <span className={css.fieldLabel}>{t('form.toolFilterAllow')}</span>
-            <Input
-              value={draft.toolFilter?.allow?.join(', ') ?? ''}
-              className={css.inputWrap}
-              onChange={event => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, allow: parseCommaList(event.target.value) } })}
+            <ToolMultiSelect
+              value={draft.toolFilter?.allow ?? []}
+              tools={toolCatalog.tools}
+              size="md"
+              ariaLabel={t('form.toolFilterAllow')}
+              onChange={allow => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, allow: allow.length > 0 ? allow : undefined } })}
             />
           </label>
           <label className={css.field}>
             <span className={css.fieldLabel}>{t('form.toolFilterDeny')}</span>
-            <Input
-              value={draft.toolFilter?.deny?.join(', ') ?? ''}
-              className={css.inputWrap}
-              onChange={event => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, deny: parseCommaList(event.target.value) } })}
+            <ToolMultiSelect
+              value={draft.toolFilter?.deny ?? []}
+              tools={toolCatalog.tools}
+              size="md"
+              ariaLabel={t('form.toolFilterDeny')}
+              onChange={deny => setDraft(current => current === null ? null : { ...current, toolFilter: { ...current.toolFilter, deny: deny.length > 0 ? deny : undefined } })}
             />
           </label>
           <label className={css.field}>

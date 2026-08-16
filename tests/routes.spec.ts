@@ -9,7 +9,7 @@ import { makeRoutes } from '../src/routes.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
 const store = new SubagentStore(join(dir, 'store.json'))
-const { routes } = makeRoutes({ store })
+const { routes } = makeRoutes({ store, tools: { schemas: () => [] } })
 
 let server: Server
 let base = ''
@@ -183,7 +183,7 @@ describe('subagents routes', () => {
       }],
     })
     writeFileSync(path, malformed, 'utf8')
-    const { routes } = makeRoutes({ store: new SubagentStore(path) })
+    const { routes } = makeRoutes({ store: new SubagentStore(path), tools: { schemas: () => [] } })
     try {
       const response = await callHandler(routes[0], 'GET')
       const json = response.json as { profiles: Array<{ id: string }>; corrupt: boolean }
@@ -214,7 +214,7 @@ describe('subagents routes', () => {
       }],
     })
     writeFileSync(path, malformed, 'utf8')
-    const { routes } = makeRoutes({ store: new SubagentStore(path) })
+    const { routes } = makeRoutes({ store: new SubagentStore(path), tools: { schemas: () => [] } })
     try {
       const response = await callHandler(routes[1], 'POST', '/api/dsh-subagents/profiles/restore-builtins')
       const json = response.json as { profiles: Array<{ id: string }>; corrupt: boolean; error?: string }
@@ -309,6 +309,7 @@ describe('subagents routes', () => {
         update: () => { throw new Error('disk write failed') },
         delete: () => { throw new Error('disk write failed') },
       } as never,
+      tools: { schemas: () => [] },
     })
     const created = await callHandlerWithBody(routes[0], 'POST', '/api/dsh-subagents/profiles', {
       id: 'write-fail',
@@ -331,6 +332,21 @@ describe('subagents routes', () => {
     expect((deleted.json as { error: string }).error).toContain('disk write failed')
   })
 
+  it('lists available tool names from ctx.tools.schemas()', async () => {
+    const tools = [{ name: 'read_file' }, { name: 'write_file' }] as const
+    const { routes } = makeRoutes({
+      store,
+      tools: {
+        schemas: () => tools,
+      } as never,
+    })
+    const route = routes.find(r => r.kind === 'exact' && r.path === '/api/dsh-subagents/tools')
+    expect(route).toBeDefined()
+    const response = await callHandler(route!, 'GET', '/api/dsh-subagents/tools')
+    expect(response.status).toBe(200)
+    expect((response.json as { tools: string[] }).tools).toEqual(['read_file', 'write_file'])
+  })
+
   it('rejects non-loopback Host headers with 403', async () => {
     const response = await rawRequest('/api/dsh-subagents/profiles', { host: 'example.com' })
     expect(response.status).toBe(403)
@@ -344,14 +360,14 @@ describe('subagents routes', () => {
   })
 
   it('returns JSON errors when the profile list store read fails', async () => {
-    const { routes } = makeRoutes({ store: { list: () => { throw new Error('disk read failed') } } as never })
+    const { routes } = makeRoutes({ store: { list: () => { throw new Error('disk read failed') } } as never, tools: { schemas: () => [] } })
     const response = await callHandler(routes[0], 'GET')
     expect(response.status).toBe(500)
     expect((response.json as { error: string }).error).toContain('disk read failed')
   })
 
   it('returns JSON errors when restore fails', async () => {
-    const { routes } = makeRoutes({ store: { restoreBuiltins: () => { throw new Error('restore failed') } } as never })
+    const { routes } = makeRoutes({ store: { restoreBuiltins: () => { throw new Error('restore failed') } } as never, tools: { schemas: () => [] } })
     const response = await callHandler(routes[1], 'POST', '/api/dsh-subagents/profiles/restore-builtins')
     expect(response.status).toBe(500)
     expect((response.json as { error: string }).error).toContain('restore failed')

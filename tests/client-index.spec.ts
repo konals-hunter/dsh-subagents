@@ -40,5 +40,12 @@ describe('client apply registration', () => {
       expect.objectContaining({ name: 'settings.section', id: 'subagents' }),
       expect.anything(),
     )
+
+    const registerCalls = slotsRegister.mock.calls as unknown as Array<[{ inject(): Record<string, unknown> }]>
+    const descriptor = registerCalls[0]?.[0]
+    expect(descriptor).toHaveProperty('inject')
+    const injected = descriptor!.inject()
+    expect(injected.hooks).toHaveProperty('toolCatalog')
+    expect(injected.loadTools).toBeInstanceOf(Function)
   })
 })

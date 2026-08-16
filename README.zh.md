@@ -3,6 +3,8 @@
 DSH Subagent 配置管理插件：在设置中维护内置/自定义 Subagent，并通过
 `subagent_profile` 工具接入 Harness 原生 `ctx.subagents` spawn/fork 体系。
 
+![dsh-subagents 设置界面截图](screenshots/ScreenShot_2026-08-16_130641_672.png)
+
 ## 功能
 
 - 内置 Subagent：Explore、General、Vision。

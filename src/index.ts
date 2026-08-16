@@ -27,7 +27,7 @@ export function apply(ctx: Context): void {
   const store = new SubagentStore()
   store.list()
 
-  const { routes } = makeRoutes({ store })
+  const { routes } = makeRoutes({ store, tools: ctx.tools })
 
   ctx.effect(() => {
     let disposeTool: (() => void) | undefined

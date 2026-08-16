@@ -11,6 +11,10 @@ export interface ProfilesResponse {
   corrupt?: boolean
 }
 
+export interface ToolsResponse {
+  tools: string[]
+}
+
 export interface RestoreBuiltinsResponse extends ProfilesResponse {
   error?: string
 }
@@ -78,5 +82,10 @@ export class SubagentsApi {
   async restoreBuiltins(): Promise<RestoreBuiltinsResponse> {
     const response = await fetch(SUBAGENTS_API.restoreBuiltins, { method: 'POST' })
     return await readJson<RestoreBuiltinsResponse>(response)
+  }
+
+  async listTools(): Promise<ToolsResponse> {
+    const response = await fetch(SUBAGENTS_API.tools)
+    return await readJson<ToolsResponse>(response)
   }
 }

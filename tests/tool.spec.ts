@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { joinPrompt, makeSubagentProfileTool, resolveProfileRequest } from '../src/tool.ts'
+import { buildImageInstruction, joinPrompt, makeSubagentProfileTool, resolveProfileRequest } from '../src/tool.ts'
 import type { SubagentStore } from '../src/store.ts'
 import type { SubagentProfile } from '../src/protocol.ts'
 
@@ -104,6 +104,46 @@ describe('subagent profile tool helpers', () => {
     expect(resolved.prompt).toBe('Just do it')
     expect(resolved.agentOptions.subagentProfileId).toBeUndefined()
     expect(resolved.persona).toBeUndefined()
+  })
+})
+
+describe('buildImageInstruction', () => {
+  it('returns the exact instruction for a non-empty image path', () => {
+    expect(buildImageInstruction('/path/to/image.png')).toBe(
+      'You are analyzing the image at "/path/to/image.png".\n' +
+      'First call the read_image tool with file_path "/path/to/image.png" to load the image into your context, then complete the requested task based on the image.'
+    )
+  })
+
+  it('returns empty string for empty or undefined imagePath', () => {
+    expect(buildImageInstruction('')).toBe('')
+    expect(buildImageInstruction(undefined as unknown as string)).toBe('')
+  })
+})
+
+describe('resolveProfileRequest with imagePath', () => {
+  it('prepends image instruction before profile template and prompt', () => {
+    const resolved = resolveProfileRequest(
+      { profile: 'explore', prompt: 'Describe this.', imagePath: '/img.png' },
+      { ...profile, promptTemplate: 'Explore first.' }
+    )
+    expect(resolved.prompt).toBe(
+      'You are analyzing the image at "/img.png".\n' +
+      'First call the read_image tool with file_path "/img.png" to load the image into your context, then complete the requested task based on the image.\n\n' +
+      'Explore first.\n\nDescribe this.'
+    )
+  })
+
+  it('prepends image instruction before prompt when no profile', () => {
+    const resolved = resolveProfileRequest(
+      { prompt: 'Describe this.', imagePath: '/img.png' },
+      undefined
+    )
+    expect(resolved.prompt).toBe(
+      'You are analyzing the image at "/img.png".\n' +
+      'First call the read_image tool with file_path "/img.png" to load the image into your context, then complete the requested task based on the image.\n\n' +
+      'Describe this.'
+    )
   })
 })
 

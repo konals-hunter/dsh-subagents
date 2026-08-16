@@ -249,12 +249,14 @@ select.input {
 
 /* Unified model + effort select triggers. */
 .modelSelect,
-.effortSelect {
+.effortSelect,
+.toolSelect {
   display: inline-flex;
 }
 
 .modelSelectTrigger,
-.effortSelectTrigger {
+.effortSelectTrigger,
+.toolSelectTrigger {
   max-width: 240px;
 }
 
