@@ -405,7 +405,41 @@ describe('SubagentsSection', () => {
     }
   })
 
-  it('adds a thinking config from the management area', async () => {
+  it('adds a thinking config from the management area with a valid provider and model', async () => {
+    const create = vi.fn(async () => {})
+    const injected = renderSection({ createThinkingConfig: create })
+    const { container, root } = mountSection(injected)
+    try {
+      const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增配置')
+      expect(addButton).toBeDefined()
+      await act(async () => { addButton?.click() })
+
+      const modelTrigger = [...container.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === '模型')
+      expect(modelTrigger).toBeDefined()
+      await act(async () => { modelTrigger?.click() })
+      const modelRow = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('DeepSeek V4 0731'))
+      expect(modelRow).toBeDefined()
+      await act(async () => { modelRow?.click() })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存配置')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({
+        provider: 'jiyuan',
+        model: 'deepseek-v4-0731',
+        variants: expect.arrayContaining([
+          expect.objectContaining({ id: 'low', name: 'low' }),
+          expect.objectContaining({ id: 'medium', name: 'medium' }),
+          expect.objectContaining({ id: 'high', name: 'high' }),
+        ]),
+        defaultVariant: 'medium',
+      }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('blocks a thinking config create with a blank provider or model', async () => {
     const create = vi.fn(async () => {})
     const injected = renderSection({ createThinkingConfig: create })
     const { container, root } = mountSection(injected)
@@ -416,7 +450,8 @@ describe('SubagentsSection', () => {
       const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存配置')
       expect(saveButton).toBeDefined()
       await act(async () => { saveButton?.click() })
-      expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: '', model: '' }))
+      expect(create).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('请选择 Provider 和模型')
     } finally {
       unmountSection(container, root)
     }
@@ -440,6 +475,38 @@ describe('SubagentsSection', () => {
       const modelTrigger = [...container.querySelectorAll('button')]
         .find(button => button.textContent?.includes('jiyuan / deepseek-v4-flash-0731') && (button as HTMLButtonElement).disabled)
       expect(modelTrigger).toBeDefined()
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('saves an edited thinking config', async () => {
+    const updateThinkingConfig = vi.fn(async () => {})
+    const thinkingConfig: ModelThinkingConfig = {
+      provider: 'jiyuan',
+      model: 'deepseek-v4-flash-0731',
+      variants: [{ id: 'high', name: 'high' }],
+      defaultVariant: 'high',
+    }
+    const injected = renderSection({ updateThinkingConfig }, [], false, [thinkingConfig])
+    const { container, root } = mountSection(injected)
+    try {
+      const editButton = [...container.querySelectorAll('button')].find(button => button.textContent === '编辑配置')
+      expect(editButton).toBeDefined()
+      await act(async () => { editButton?.click() })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存配置')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+
+      expect(updateThinkingConfig).toHaveBeenCalledWith(
+        'jiyuan',
+        'deepseek-v4-flash-0731',
+        expect.objectContaining({
+          variants: [expect.objectContaining({ id: 'high', name: 'high' })],
+          defaultVariant: 'high',
+        }),
+      )
     } finally {
       unmountSection(container, root)
     }

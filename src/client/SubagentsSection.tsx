@@ -298,8 +298,12 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
   }
   const saveConfig = async (): Promise<void> => {
     if (configDraft === null) return
+    if (configDraft.provider.trim() === '' || configDraft.model.trim() === '') {
+      setConfigError(t('config.providerModelRequired'))
+      return
+    }
     const variants = parseVariantsText(configDraft.variantsText)
-    if (variants.length === 0) { setConfigError('至少需要一行 variant'); return }
+    if (variants.length === 0) { setConfigError(t('config.variantsRequired')); return }
     const defaultVariant = configDraft.defaultVariant.trim() === '' ? undefined : configDraft.defaultVariant.trim()
     setConfigSaving(true)
     setConfigError(null)

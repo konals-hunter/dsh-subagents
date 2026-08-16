@@ -51,6 +51,7 @@ describe('host wiring', () => {
     const on = vi.fn(() => () => {})
     const section = vi.fn(() => () => {})
     const effect = vi.fn((callback: () => void) => callback())
+    const provide = vi.fn(() => () => {})
     const ctx = {
       effect,
       tools: { register: registerTool },
@@ -58,10 +59,14 @@ describe('host wiring', () => {
       systemPrompt: { section },
       on,
       get: vi.fn(() => undefined),
+      provide,
     } as never
 
     apply(ctx as never)
 
+    expect(provide).toHaveBeenCalledWith('dsh-subagents', expect.objectContaining({
+      listThinkingConfigs: expect.any(Function),
+    }))
     expect(effect).toHaveBeenCalled()
     expect(registerRoute).toHaveBeenCalledTimes(5)
     expect(registerTool).toHaveBeenCalled()
@@ -77,6 +82,7 @@ describe('host wiring', () => {
     const on = vi.fn(() => () => {})
     const section = vi.fn(() => () => {})
     const effect = vi.fn((callback: () => () => void) => callback())
+    const provide = vi.fn(() => () => {})
     const ctx = {
       effect,
       tools: { register: registerTool },
@@ -84,6 +90,7 @@ describe('host wiring', () => {
       systemPrompt: { section },
       on,
       get: vi.fn(() => undefined),
+      provide,
     } as never
 
     apply(ctx as never)

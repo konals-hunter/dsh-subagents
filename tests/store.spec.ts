@@ -906,6 +906,28 @@ describe('thinking configs', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('does not persist or notify for a no-op thinking config update', () => {
+    const { store, dir } = tempStore()
+    try {
+      store.list()
+      const config = store.listThinkingConfigs().find(entry => entry.provider === 'stepfun' && entry.model === 'step-3.7-flash')
+      expect(config).toBeDefined()
+      const listener = vi.fn()
+      store.subscribe(listener)
+
+      const same = store.updateThinkingConfig('stepfun', 'step-3.7-flash', {
+        variants: config!.variants.map(variant => ({ ...variant })),
+        defaultVariant: config!.defaultVariant,
+      })
+      expect(same).toEqual(config)
+      expect(listener).not.toHaveBeenCalled()
+
+      const empty = store.updateThinkingConfig('stepfun', 'step-3.7-flash', {})
+      expect(empty).toEqual(config)
+      expect(listener).not.toHaveBeenCalled()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('validates config payloads', () => {
     expect(() => validateThinkingConfigPayload({ provider: '', model: 'm', variants: [{ id: 'a', name: 'A' }] })).toThrow(/provider/)
     expect(() => validateThinkingConfigPayload({ provider: 'p', model: 'm', variants: [] })).toThrow(/variants/)

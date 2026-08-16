@@ -687,9 +687,26 @@ export class SubagentStore {
   updateThinkingConfig(provider: string, model: string, patch: unknown): ModelThinkingConfig {
     const normalized = validateThinkingConfigPatch(patch)
     const file = this.read()
-    this.assertWritable()
     const config = (file.modelThinkingConfigs ?? []).find(item => item.provider === provider && item.model === model)
     if (config === undefined) throw new StoreClientError('thinking config not found')
+    if (Object.keys(normalized).length === 0) return config
+    const defaultVariant = Object.prototype.hasOwnProperty.call(normalized, 'defaultVariant')
+      ? normalized.defaultVariant ?? undefined
+      : config.defaultVariant
+    const variantsChanged = normalized.variants !== undefined && (
+      normalized.variants.length !== config.variants.length ||
+      normalized.variants.some((variant, index) => {
+        const current = config.variants[index]
+        return current === undefined
+          || variant.id !== current.id
+          || variant.name !== current.name
+          || (variant.description ?? undefined) !== (current.description ?? undefined)
+      })
+    )
+    const defaultChanged = Object.prototype.hasOwnProperty.call(normalized, 'defaultVariant')
+      && defaultVariant !== config.defaultVariant
+    if (!variantsChanged && !defaultChanged) return config
+    this.assertWritable()
     if (normalized.variants !== undefined) config.variants = normalized.variants
     if (Object.prototype.hasOwnProperty.call(normalized, 'defaultVariant')) {
       config.defaultVariant = normalized.defaultVariant ?? undefined
