@@ -46,6 +46,8 @@ describe('client apply registration', () => {
     expect(descriptor).toHaveProperty('inject')
     const injected = descriptor!.inject()
     expect(injected.hooks).toHaveProperty('toolCatalog')
+    expect(injected.hooks).toHaveProperty('presetCatalog')
     expect(injected.loadTools).toBeInstanceOf(Function)
+    expect(injected.loadPresets).toBeInstanceOf(Function)
   })
 })

@@ -11,6 +11,7 @@ import { Button, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SubagentProfile, SubagentProfilePatch, SubagentProfilePayload, ToolFilter } from '../protocol.ts'
 import type { SubagentsSectionState } from './controller.ts'
 import type { ModelCatalogState } from './ModelCatalogController.ts'
+import type { PresetCatalogState } from './PresetCatalogController.ts'
 import type { ToolCatalogState } from './ToolCatalogController.ts'
 import { ModelSelect } from './ModelSelect.tsx'
 import { EffortSelect, type EffortOption } from './EffortSelect.tsx'
@@ -27,11 +28,14 @@ export interface SubagentsSectionInjected {
     subagents: SnapshotStore<SubagentsSectionState>
     /** Host model catalog snapshot bound by the renderer as useModelCatalog. */
     modelCatalog: SnapshotStore<ModelCatalogState>
+    /** Host preset catalog snapshot bound by the renderer as usePresetCatalog. */
+    presetCatalog: SnapshotStore<PresetCatalogState>
     /** Host tool catalog snapshot bound by the renderer as useToolCatalog. */
     toolCatalog: SnapshotStore<ToolCatalogState>
   }
   load: () => Promise<void>
   loadModels: () => Promise<void>
+  loadPresets: () => Promise<void>
   loadTools: () => Promise<void>
   create: (payload: SubagentProfilePayload) => Promise<void>
   update: (id: string, patch: SubagentProfilePatch) => Promise<void>
@@ -57,6 +61,7 @@ function blankDraft(): Draft {
     modelProvider: '',
     model: '',
     backgroundMode: 'one-shot',
+    preset: undefined,
   }
 }
 
@@ -84,6 +89,7 @@ function toDraft(profile: SubagentProfile): Draft {
     promptTemplate: profile.promptTemplate,
     toolFilter: profile.toolFilter,
     backgroundMode: profile.backgroundMode ?? 'one-shot',
+    preset: profile.preset ?? undefined,
   }
 }
 
@@ -108,9 +114,10 @@ function normalizeToolFilterDraft(value: ToolFilter | null | undefined): ToolFil
  * @returns the section.
  */
 export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
-  const { useSubagents, useModelCatalog, useToolCatalog, t, load, loadModels, loadTools, create, update, remove, restoreBuiltins } = props
+  const { useSubagents, useModelCatalog, usePresetCatalog, useToolCatalog, t, load, loadModels, loadPresets, loadTools, create, update, remove, restoreBuiltins } = props
   const state = useSubagents(snapshot => snapshot)
   const catalog = useModelCatalog(snapshot => snapshot)
+  const presetCatalog = usePresetCatalog(snapshot => snapshot)
   const toolCatalog = useToolCatalog(snapshot => snapshot)
   const [editing, setEditing] = useState<{ mode: 'new' } | { mode: 'edit'; profile: SubagentProfile } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -119,6 +126,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
 
   useEffect(() => { void load() }, [load])
   useEffect(() => { void loadModels() }, [loadModels])
+  useEffect(() => { void loadPresets() }, [loadPresets])
   useEffect(() => { void loadTools() }, [loadTools])
 
   const effortOptions = useMemo<EffortOption[]>(() => [
@@ -137,6 +145,13 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
     { value: 'one-shot', label: 'one-shot' },
     { value: 'continuable', label: 'continuable' },
   ], [])
+  const presetOptions = useMemo(() => {
+    const items: Array<{ value: string; label: string }> = [{ value: '', label: t('form.preset.inherit') }]
+    for (const preset of presetCatalog.presets) {
+      items.push({ value: preset.id, label: preset.name ?? preset.id })
+    }
+    return items
+  }, [presetCatalog.presets, t])
 
   if (state.status === 'error') {
     return <div className={css.section}><p className={css.error}>{t('error.load')} {state.error}</p></div>
@@ -180,6 +195,7 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           promptTemplate: draft.promptTemplate,
           toolFilter: normalizeToolFilterDraft(draft.toolFilter),
           backgroundMode: draft.backgroundMode,
+          preset: draft.preset ?? null,
         })
       }
       close()
@@ -258,6 +274,13 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
                       options={effortOptions}
                       ariaLabel={`${t('form.reasoningEffort')} ${profile.name}`}
                       onChange={reasoningEffort => { void handleQuickUpdate(profile.id, { reasoningEffort }) }}
+                    />
+                    <MenuSelect
+                      value={profile.preset ?? ''}
+                      options={presetOptions}
+                      size="sm"
+                      ariaLabel={`${t('form.preset')} ${profile.name}`}
+                      onChange={preset => { void handleQuickUpdate(profile.id, { preset: preset || null }) }}
                     />
                     <div className={css.rowActions}>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(profile)}>{t('list.edit')}</Button>
@@ -413,6 +436,16 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
               size="md"
               ariaLabel={t('form.backgroundMode')}
               onChange={backgroundMode => setDraft(current => current === null ? null : { ...current, backgroundMode: backgroundMode as 'one-shot' | 'continuable' })}
+            />
+          </label>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('form.preset')}</span>
+            <MenuSelect
+              value={draft.preset ?? ''}
+              options={presetOptions}
+              size="md"
+              ariaLabel={t('form.preset')}
+              onChange={preset => setDraft(current => current === null ? null : { ...current, preset: preset || null })}
             />
           </label>
           <div className={css.editorActions}>

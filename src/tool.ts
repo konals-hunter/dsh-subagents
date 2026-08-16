@@ -16,6 +16,7 @@ import type { SubagentProfile, ToolFilter } from './protocol.ts'
 /** AgentOptions marker used by the effort injection listener. */
 export interface SubagentProfileAgentOptions extends AgentOptions {
   subagentProfileId?: string
+  subagentPreset?: string | null
 }
 
 /** Prepend the profile's fixed template to the model prompt. */
@@ -60,6 +61,7 @@ export function resolveProfileRequest(
       provider: profile.modelProvider,
       model: profile.model,
       subagentProfileId: profile.id,
+      subagentPreset: profile.preset ?? null,
       ...profile.maxTokens === undefined ? {} : { maxTokens: profile.maxTokens },
     },
   }

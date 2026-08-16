@@ -67,6 +67,7 @@ function isStoredProfile(value: unknown): value is SubagentProfile {
     if (value.persona !== undefined && parseOptionalString(value.persona, 'persona') === undefined) return false
     if (value.promptTemplate !== undefined && parseOptionalString(value.promptTemplate, 'promptTemplate') === undefined) return false
     if (value.toolFilter !== undefined && parseToolFilter(value.toolFilter) === undefined) return false
+    if (value.preset !== undefined && value.preset !== null && parsePreset(value.preset) === undefined) return false
   } catch {
     return false
   }
@@ -104,6 +105,7 @@ const PROFILE_FIELDS = new Set<string>([
   'promptTemplate',
   'toolFilter',
   'backgroundMode',
+  'preset',
   'createdAt',
   'updatedAt',
 ])
@@ -134,6 +136,14 @@ function parseToolFilter(value: unknown): ToolFilter | undefined {
   }
   if (normalized.allow === undefined && normalized.deny === undefined) throw new StoreClientError('toolFilter must name allow or deny')
   return normalized
+}
+
+function parsePreset(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') throw new StoreClientError('preset must be a string')
+  const trimmed = value.trim()
+  if (trimmed === '') throw new StoreClientError('preset must not be empty')
+  return trimmed
 }
 
 function parseOptionalString(value: unknown, field: string): string | undefined {
@@ -218,6 +228,11 @@ function normalizeStoredProfile(profile: SubagentProfile): SubagentProfile {
       next.toolFilter = profile.toolFilter
     }
   }
+  if (profile.preset !== undefined && profile.preset !== null) {
+    const preset = profile.preset.trim()
+    if (preset !== profile.preset) changed = true
+    next.preset = preset
+  }
   return changed ? next : profile
 }
 
@@ -257,6 +272,7 @@ export function validateProfilePayload(payload: unknown): SubagentProfilePayload
     promptTemplate: parseOptionalString(payload.promptTemplate, 'promptTemplate'),
     toolFilter: parseToolFilter(payload.toolFilter),
     backgroundMode,
+    preset: parsePreset(payload.preset),
   }
 }
 
@@ -303,6 +319,7 @@ export function validateProfilePatch(payload: unknown): SubagentProfilePatch {
     if (payload.backgroundMode !== 'one-shot' && payload.backgroundMode !== 'continuable') throw new StoreClientError('backgroundMode must be one-shot or continuable')
     patch.backgroundMode = payload.backgroundMode
   }
+  if (payload.preset !== undefined) patch.preset = parsePreset(payload.preset)
   return patch
 }
 
@@ -450,6 +467,7 @@ export class SubagentStore {
       maxTokens: normalizedPayload.maxTokens ?? undefined,
       maxDepth: normalizedPayload.maxDepth ?? undefined,
       toolFilter: normalizedPayload.toolFilter ?? undefined,
+      preset: normalizedPayload.preset ?? undefined,
       builtin: false,
       createdAt: now,
       updatedAt: now,
@@ -495,6 +513,10 @@ export class SubagentStore {
     }
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'maxDepth')) {
       profile.maxDepth = maxDepth ?? undefined
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'preset')) {
+      const patch = normalizedPatch as SubagentProfilePatch
+      profile.preset = patch.preset ?? undefined
     }
     profile.updatedAt = Math.max(Date.now(), profile.createdAt, profile.updatedAt)
     this.save(file)

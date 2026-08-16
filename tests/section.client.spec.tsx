@@ -12,6 +12,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubagentProfile } from '../src/protocol.ts'
 import type { SubagentsSectionState } from '../src/client/controller.ts'
 import type { ModelCatalogState } from '../src/client/ModelCatalogController.ts'
+import type { PresetCatalogState } from '../src/client/PresetCatalogController.ts'
 import type { ToolCatalogState } from '../src/client/ToolCatalogController.ts'
 
 const builtinProfile: SubagentProfile = {
@@ -54,6 +55,14 @@ const catalogState: ModelCatalogState = {
   failures: [],
 }
 
+const presetCatalogState: PresetCatalogState = {
+  status: 'ready',
+  presets: [
+    { id: 'standard', name: 'Standard' },
+    { id: 'minimal', name: 'Minimal' },
+  ],
+}
+
 function renderSection(
   overrides: Partial<SubagentsSectionInjected> = {},
   profiles: SubagentProfile[] = [builtinProfile],
@@ -61,24 +70,28 @@ function renderSection(
 ) {
   const store = createSnapshotStore({ status: 'ready' as const, profiles, corrupt })
   const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
+  const presetStore = createSnapshotStore<PresetCatalogState>(presetCatalogState)
   const toolCatalogStore = createSnapshotStore<ToolCatalogState>({ status: 'ready', tools: ['read_file', 'write_file'] })
   const useSubagents = <T,>(selector: (snapshot: SubagentsSectionState) => T): T =>
     useSyncExternalStore(store.subscribe, () => selector(store.getSnapshot()))
   const useModelCatalog = <T,>(selector: (snapshot: ModelCatalogState) => T): T =>
     useSyncExternalStore(catalogStore.subscribe, () => selector(catalogStore.getSnapshot()))
+  const usePresetCatalog = <T,>(selector: (snapshot: PresetCatalogState) => T): T =>
+    useSyncExternalStore(presetStore.subscribe, () => selector(presetStore.getSnapshot()))
   const useToolCatalog = <T,>(selector: (snapshot: ToolCatalogState) => T): T =>
     useSyncExternalStore(toolCatalogStore.subscribe, () => selector(toolCatalogStore.getSnapshot()))
   const base: SubagentsSectionInjected = {
-    hooks: { subagents: store, modelCatalog: catalogStore, toolCatalog: toolCatalogStore },
+    hooks: { subagents: store, modelCatalog: catalogStore, presetCatalog: presetStore, toolCatalog: toolCatalogStore },
     load: vi.fn(async () => {}),
     loadModels: vi.fn(async () => {}),
+    loadPresets: vi.fn(async () => {}),
     loadTools: vi.fn(async () => {}),
     create: vi.fn(async () => {}),
     update: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     restoreBuiltins: vi.fn(async () => {}),
   }
-  return { store, catalogStore, toolCatalogStore, useSubagents, useModelCatalog, useToolCatalog, ...base, ...overrides }
+  return { store, catalogStore, presetStore, toolCatalogStore, useSubagents, useModelCatalog, usePresetCatalog, useToolCatalog, ...base, ...overrides }
 }
 
 function mountSection(injected: ReturnType<typeof renderSection>): { container: HTMLDivElement; root: ReturnType<typeof createRoot> } {
@@ -89,6 +102,7 @@ function mountSection(injected: ReturnType<typeof renderSection>): { container: 
     root.render(<SubagentsSection
       useSubagents={injected.useSubagents}
       useModelCatalog={injected.useModelCatalog}
+      usePresetCatalog={injected.usePresetCatalog}
       useToolCatalog={injected.useToolCatalog}
       useSessions={selector => selector({} as never)}
       useWorkspaces={selector => selector({} as never)}
@@ -96,6 +110,7 @@ function mountSection(injected: ReturnType<typeof renderSection>): { container: 
       close={vi.fn()}
       load={injected.load}
       loadModels={injected.loadModels}
+      loadPresets={injected.loadPresets}
       loadTools={injected.loadTools}
       create={injected.create}
       update={injected.update}
@@ -186,16 +201,20 @@ describe('SubagentsSection', () => {
     const useToolCatalog = <T,>(selector: (snapshot: ToolCatalogState) => T): T =>
       useSyncExternalStore(toolCatalogStore.subscribe, () => selector(toolCatalogStore.getSnapshot()))
     const injected: SubagentsSectionInjected = {
-      hooks: { subagents: store, modelCatalog: catalogStore, toolCatalog: toolCatalogStore },
+      hooks: { subagents: store, modelCatalog: catalogStore, presetCatalog: createSnapshotStore(presetCatalogState), toolCatalog: toolCatalogStore },
       load: async () => {},
       loadModels: async () => {},
+      loadPresets: async () => {},
       loadTools: async () => {},
       create: payload => controller.create(payload),
       update: (id, patch) => controller.update(id, patch),
       remove: id => controller.remove(id),
       restoreBuiltins: () => controller.restoreBuiltins(),
     }
-    const { container, root } = mountSection({ ...injected, store, useSubagents, useModelCatalog, useToolCatalog } as never)
+    const presetStore = createSnapshotStore(presetCatalogState)
+    const usePresetCatalog = <T,>(selector: (snapshot: PresetCatalogState) => T): T =>
+      useSyncExternalStore(presetStore.subscribe, () => selector(presetStore.getSnapshot()))
+    const { container, root } = mountSection({ ...injected, store, useSubagents, useModelCatalog, usePresetCatalog, useToolCatalog } as never)
     try {
       expect(container.textContent).toContain('配置文件已损坏')
       const addButton = [...container.querySelectorAll('button')].find(button => button.textContent === '新增 Subagent')
@@ -378,6 +397,72 @@ describe('SubagentsSection', () => {
       await act(async () => { saveButton?.click() })
 
       expect(update).toHaveBeenCalledWith('custom-1', expect.objectContaining({ toolFilter: { allow: ['read_file'] } }))
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('changes the preset from the list quick action', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const presetTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === '默认/继承')
+      expect(presetTrigger).toBeDefined()
+      await act(async () => { presetTrigger?.click() })
+
+      const standardRow = [...container.querySelectorAll('button')].find(button => button.textContent === 'Standard')
+      expect(standardRow).toBeDefined()
+      await act(async () => { standardRow?.click() })
+
+      expect(update).toHaveBeenCalledWith('custom-1', { preset: 'standard' })
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('clears preset via the list quick action', async () => {
+    const profileWithPreset: SubagentProfile = { ...customProfile, preset: 'standard' }
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [profileWithPreset])
+    const { container, root } = mountSection(injected)
+    try {
+      const presetTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === 'Standard')
+      expect(presetTrigger).toBeDefined()
+      await act(async () => { presetTrigger?.click() })
+
+      const inheritRow = [...container.querySelectorAll('button')].find(button => button.textContent === '默认/继承')
+      expect(inheritRow).toBeDefined()
+      await act(async () => { inheritRow?.click() })
+
+      expect(update).toHaveBeenCalledWith('custom-1', { preset: null })
+    } finally {
+      unmountSection(container, root)
+    }
+  })
+
+  it('sends preset in the edit form', async () => {
+    const update = vi.fn(async () => {})
+    const injected = renderSection({ update }, [customProfile])
+    const { container, root } = mountSection(injected)
+    try {
+      const editButton = [...container.querySelectorAll('button')].find(button => button.textContent === '编辑')
+      expect(editButton).toBeDefined()
+      await act(async () => { editButton?.click() })
+
+      const presetTrigger = [...container.querySelectorAll('button')].find(button => button.textContent === '默认/继承')
+      expect(presetTrigger).toBeDefined()
+      await act(async () => { presetTrigger?.click() })
+
+      const minimalRow = [...container.querySelectorAll('button')].find(button => button.textContent === 'Minimal')
+      expect(minimalRow).toBeDefined()
+      await act(async () => { minimalRow?.click() })
+
+      const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === '保存')
+      expect(saveButton).toBeDefined()
+      await act(async () => { saveButton?.click() })
+
+      expect(update).toHaveBeenCalledWith('custom-1', expect.objectContaining({ preset: 'minimal' }))
     } finally {
       unmountSection(container, root)
     }

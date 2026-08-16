@@ -29,6 +29,7 @@ export interface SubagentProfile {
   promptTemplate?: string
   toolFilter?: ToolFilter
   backgroundMode?: SubagentBackgroundMode
+  preset?: string | null
   createdAt: number
   updatedAt: number
 }
@@ -49,6 +50,7 @@ export interface SubagentProfilePayload {
   promptTemplate?: string
   toolFilter?: ToolFilter | null
   backgroundMode?: SubagentBackgroundMode
+  preset?: string | null
 }
 
 /** Partial update accepted by PUT. */

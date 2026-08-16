@@ -23,6 +23,7 @@ const profile: SubagentProfile = {
   promptTemplate: 'Explore first.',
   toolFilter: { deny: ['edit'] },
   backgroundMode: 'one-shot',
+  preset: 'standard',
   createdAt: 1,
   updatedAt: 1,
 }
@@ -93,6 +94,7 @@ describe('subagent profile tool helpers', () => {
       model: 'deepseek-v4-flash-0731',
       maxTokens: 2048,
       subagentProfileId: 'explore',
+      subagentPreset: 'standard',
     })
     expect(resolved.persona).toBe('You are explore.')
     expect(resolved.toolFilter).toEqual({ deny: ['edit'] })
@@ -103,6 +105,7 @@ describe('subagent profile tool helpers', () => {
     const resolved = resolveProfileRequest({ prompt: 'Just do it' }, undefined)
     expect(resolved.prompt).toBe('Just do it')
     expect(resolved.agentOptions.subagentProfileId).toBeUndefined()
+    expect(resolved.agentOptions.subagentPreset).toBeUndefined()
     expect(resolved.persona).toBeUndefined()
   })
 })

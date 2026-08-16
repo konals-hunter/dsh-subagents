@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { SubagentsApi } from './api.ts'
 import { SubagentsSectionController } from './controller.ts'
 import { ModelCatalogController } from './ModelCatalogController.ts'
+import { PresetCatalogController } from './PresetCatalogController.ts'
 import { ToolCatalogController } from './ToolCatalogController.ts'
 import { en, NS, zh } from './locales.ts'
 import { SubagentsSection, type SubagentsSectionInjected } from './SubagentsSection.tsx'
@@ -36,6 +37,7 @@ export function apply(ctx: ClientContext): void {
   const controller = new SubagentsSectionController(api)
   const connection = ctx.get('connection') as ConnectionHandle
   const modelCatalog = new ModelCatalogController(connection.api)
+  const presetCatalog = new PresetCatalogController(connection.api)
   const toolCatalog = new ToolCatalogController(api)
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
@@ -48,10 +50,12 @@ export function apply(ctx: ClientContext): void {
       hooks: {
         subagents: controller.store,
         modelCatalog: modelCatalog.store,
+        presetCatalog: presetCatalog.store,
         toolCatalog: toolCatalog.store,
       },
       load: () => controller.load(),
       loadModels: () => modelCatalog.load(),
+      loadPresets: () => presetCatalog.load(),
       loadTools: () => toolCatalog.load(),
       create: payload => controller.create(payload),
       update: (id, patch) => controller.update(id, patch),

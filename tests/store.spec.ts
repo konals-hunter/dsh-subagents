@@ -779,4 +779,67 @@ describe('SubagentStore', () => {
       expect(readFileSync(store.path, 'utf8')).toBe(before)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
+
+  it('persists and clears preset through create and update', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({ id: 'preset-persist', preset: 'standard' }))
+      expect(created.preset).toBe('standard')
+      const updated = store.update('preset-persist', { preset: null })
+      expect(updated.preset).toBeUndefined()
+      expect(() => validateProfilePatch({ preset: null })).not.toThrow()
+      expect(() => validateProfilePayload(payload({ preset: null }))).not.toThrow()
+      const raw = JSON.parse(readFileSync(store.path, 'utf8')) as {
+        profiles: Array<{ id: string; preset?: unknown }>
+      }
+      expect(raw.profiles.find(entry => entry.id === 'preset-persist')?.preset).toBeUndefined()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('trims stored preset and rejects empty preset strings', () => {
+    const { store, dir } = tempStore()
+    try {
+      const created = store.create(payload({ id: 'preset-trim', preset: '  anchored-standard  ' }))
+      expect(created.preset).toBe('anchored-standard')
+      expect(() => validateProfilePayload(payload({ preset: '' }))).toThrow(/preset/)
+      expect(() => validateProfilePayload(payload({ preset: '  ' }))).toThrow(/preset/)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('normalizes stored preset on read', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    const profile = storedProfile({ id: 'preset-norm', preset: '  minimal  ' })
+    writeFileSync(path, JSON.stringify({ version: 1, profiles: [profile] }), 'utf8')
+    const store = new SubagentStore(path)
+    try {
+      const loaded = store.find('preset-norm')
+      expect(loaded?.preset).toBe('minimal')
+      expect(store.isCorrupt()).toBe(false)
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+        profiles: Array<{ id: string; preset?: unknown }>
+      }
+      expect(raw.profiles.find(entry => entry.id === 'preset-norm')?.preset).toBe('minimal')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('treats invalid preset values as corrupt and leaves the file untouched', () => {
+    const malformedPresets: Array<Record<string, unknown>> = [
+      { preset: '' },
+      { preset: '  ' },
+      { preset: 123 as never },
+    ]
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-subagents-'))
+    const path = join(dir, 'store.json')
+    try {
+      for (const override of malformedPresets) {
+        const malformed = JSON.stringify({ version: 1, profiles: [storedProfile(override)] })
+        writeFileSync(path, malformed, 'utf8')
+        const store = new SubagentStore(path)
+        expect(store.list().map(profile => profile.id)).toEqual(['explore', 'general', 'vision'])
+        expect(store.isCorrupt()).toBe(true)
+        expect(readFileSync(path, 'utf8')).toBe(malformed)
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
 })

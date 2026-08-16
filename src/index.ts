@@ -12,6 +12,7 @@ import { SubagentStore } from './store.ts'
 import { makeRoutes, type LlmDiagnosticFace } from './routes.ts'
 import { makeSubagentProfileTool } from './tool.ts'
 import { installEffortInjection } from './effort.ts'
+import { installPresetComposition } from './preset.ts'
 
 /** Stable cordis plugin name. */
 export const name = 'dsh-subagents'
@@ -55,6 +56,7 @@ export function apply(ctx: Context): void {
     }
     const disposers = routes.map(route => ctx.webServer.register(route))
     const disposeEffort = installEffortInjection(ctx, store)
+    const disposePreset = installPresetComposition(ctx)
     const disposeImageGuidance = ctx.systemPrompt.section({
       name: 'dsh-subagents:image-reading',
       order: IMAGE_GUIDANCE_ORDER,
@@ -65,6 +67,7 @@ export function apply(ctx: Context): void {
     return () => {
       for (const dispose of disposers) dispose()
       disposeEffort()
+      disposePreset()
       disposeImageGuidance()
       unsubscribe()
       if (disposeTool !== undefined) disposeTool()
@@ -76,3 +79,4 @@ export { SubagentStore } from './store.ts'
 export { makeRoutes } from './routes.ts'
 export { makeSubagentProfileTool } from './tool.ts'
 export { installEffortInjection } from './effort.ts'
+export { installPresetComposition } from './preset.ts'
