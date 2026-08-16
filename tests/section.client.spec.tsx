@@ -68,7 +68,7 @@ function renderSection(
   profiles: SubagentProfile[] = [builtinProfile],
   corrupt = false,
 ) {
-  const store = createSnapshotStore({ status: 'ready' as const, profiles, corrupt })
+  const store = createSnapshotStore({ status: 'ready' as const, profiles, thinkingConfigs: [], corrupt })
   const catalogStore = createSnapshotStore<ModelCatalogState>(catalogState)
   const presetStore = createSnapshotStore<PresetCatalogState>(presetCatalogState)
   const toolCatalogStore = createSnapshotStore<ToolCatalogState>({ status: 'ready', tools: ['read_file', 'write_file'] })
@@ -182,6 +182,7 @@ describe('SubagentsSection', () => {
   it('clears the corruption banner after a successful create', async () => {
     const api = {
       listProfiles: async () => ({ profiles: [builtinProfile], corrupt: true }),
+      listThinkingConfigs: async () => ({ configs: [] }),
       createProfile: vi.fn(async () => ({ ...customProfile, id: 'created' })),
       restoreBuiltins: async () => ({
         profiles: [builtinProfile],
