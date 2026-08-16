@@ -13,6 +13,7 @@ import type { SubagentsSectionState } from './controller.ts'
 import type { ModelCatalogState } from './ModelCatalogController.ts'
 import { ModelSelect } from './ModelSelect.tsx'
 import { EffortSelect, type EffortOption } from './EffortSelect.tsx'
+import { MenuSelect } from './MenuSelect.tsx'
 import { Switch } from './Switch.tsx'
 import { NS } from './locales.ts'
 import css from './subagents.module.css'
@@ -121,6 +122,14 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
     { value: 'high', label: 'high' },
     { value: 'max', label: 'max' },
   ], [t])
+  const providerOptions = useMemo(() => [
+    { value: 'spawn', label: 'spawn' },
+    { value: 'fork', label: 'fork' },
+  ], [])
+  const backgroundOptions = useMemo(() => [
+    { value: 'one-shot', label: 'one-shot' },
+    { value: 'continuable', label: 'continuable' },
+  ], [])
 
   if (state.status === 'error') {
     return <div className={css.section}><p className={css.error}>{t('error.load')} {state.error}</p></div>
@@ -233,6 +242,8 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
                       groups={catalog.groups}
                       status={catalog.status}
                       ariaLabel={`${t('form.model')} ${profile.name}`}
+                      loadingLabel={t('form.model.loading')}
+                      emptyLabel={t('form.model.empty')}
                       onSelect={(modelProvider, model) => { void handleQuickUpdate(profile.id, { modelProvider, model }) }}
                     />
                     <EffortSelect
@@ -302,14 +313,13 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           </label>
           <label className={css.field}>
             <span className={css.fieldLabel}>{t('form.provider')}</span>
-            <select
-              className={css.input}
+            <MenuSelect
               value={draft.provider ?? 'spawn'}
-              onChange={event => setDraft(current => current === null ? null : { ...current, provider: event.target.value as 'spawn' | 'fork' })}
-            >
-              <option value="spawn">spawn</option>
-              <option value="fork">fork</option>
-            </select>
+              options={providerOptions}
+              size="md"
+              ariaLabel={t('form.provider')}
+              onChange={provider => setDraft(current => current === null ? null : { ...current, provider: provider as 'spawn' | 'fork' })}
+            />
           </label>
           <label className={css.field}>
             <span className={css.fieldLabel}>{t('form.model')}</span>
@@ -319,6 +329,9 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
               groups={catalog.groups}
               status={catalog.status}
               size="md"
+              ariaLabel={t('form.model')}
+              loadingLabel={t('form.model.loading')}
+              emptyLabel={t('form.model.empty')}
               onSelect={(modelProvider, model) => setDraft(current => current === null ? null : { ...current, modelProvider, model })}
             />
           </label>
@@ -383,14 +396,13 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
           </label>
           <label className={css.field}>
             <span className={css.fieldLabel}>{t('form.backgroundMode')}</span>
-            <select
-              className={css.input}
+            <MenuSelect
               value={draft.backgroundMode ?? 'one-shot'}
-              onChange={event => setDraft(current => current === null ? null : { ...current, backgroundMode: event.target.value as 'one-shot' | 'continuable' })}
-            >
-              <option value="one-shot">one-shot</option>
-              <option value="continuable">continuable</option>
-            </select>
+              options={backgroundOptions}
+              size="md"
+              ariaLabel={t('form.backgroundMode')}
+              onChange={backgroundMode => setDraft(current => current === null ? null : { ...current, backgroundMode: backgroundMode as 'one-shot' | 'continuable' })}
+            />
           </label>
           <div className={css.editorActions}>
             <Button variant="primary" size="md" disabled={saving} onClick={() => { void save() }}>{saving ? '...' : t('form.save')}</Button>

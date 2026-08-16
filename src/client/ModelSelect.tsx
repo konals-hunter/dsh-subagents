@@ -28,6 +28,10 @@ export interface ModelSelectProps {
   size?: 'sm' | 'md'
   /** Accessible name for the trigger when it is icon/annotation dense. */
   ariaLabel?: string
+  /** Localized loading label shown while the catalog is loading. */
+  loadingLabel?: string
+  /** Localized empty/error label shown when no models are available. */
+  emptyLabel?: string
   /** Called after the user picks a model; receives provider + model ids. */
   onSelect: (modelProvider: string, model: string) => void
 }
@@ -55,6 +59,8 @@ export function ModelSelect({
   disabled = false,
   size = 'sm',
   ariaLabel,
+  loadingLabel = 'Loading…',
+  emptyLabel = 'No models available',
   onSelect,
 }: ModelSelectProps): ReactNode {
   const [open, setOpen] = useState(false)
@@ -77,10 +83,10 @@ export function ModelSelect({
     return rows
   })
   if (groups.length === 0 && status === 'loading') {
-    items.push({ type: 'label', id: 'catalog-loading', text: 'Loading…' })
+    items.push({ type: 'label', id: 'catalog-loading', text: loadingLabel })
   }
   if (groups.length === 0 && (status === 'ready' || status === 'error')) {
-    items.push({ type: 'label', id: 'catalog-empty', text: 'No models available' })
+    items.push({ type: 'label', id: 'catalog-empty', text: emptyLabel })
   }
 
   let selectedId: string | undefined
