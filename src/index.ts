@@ -62,6 +62,18 @@ export function apply(ctx: Context): void {
       order: IMAGE_GUIDANCE_ORDER,
       text: IMAGE_READING_GUIDANCE,
     })
+    const disposeProfileGuidance = ctx.systemPrompt.section({
+      name: 'dsh-subagents:profiles',
+      order: IMAGE_GUIDANCE_ORDER + 1,
+      text: () => {
+        const profiles = store.list().filter(profile => profile.enabled)
+        if (profiles.length === 0) return ''
+        return 'You have maintained subagent profiles available through the `subagent_profile` tool. '
+          + 'Use them when a task is better delegated to a focused subagent (exploration, general-purpose work, vision/image analysis, or a custom profile). '
+          + 'Available profiles:\n'
+          + profiles.map(profile => `- ${profile.id}: ${profile.name} — ${profile.description}`).join('\n')
+      },
+    })
     const unsubscribe = store.subscribe(syncTool)
     syncTool()
     return () => {
@@ -69,6 +81,7 @@ export function apply(ctx: Context): void {
       disposeEffort()
       disposePreset()
       disposeImageGuidance()
+      disposeProfileGuidance()
       unsubscribe()
       if (disposeTool !== undefined) disposeTool()
     }

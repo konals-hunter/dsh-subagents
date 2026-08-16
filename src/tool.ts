@@ -97,21 +97,23 @@ function text(value: string): ContentBlock[] {
  */
 export function makeSubagentProfileTool(deps: { store: SubagentStore; ctx: Context }) {
   const { store, ctx } = deps
-  const enabledIds = store.enabledIds()
+  const profiles = store.list().filter(profile => profile.enabled)
+  const enabledIds = profiles.map(profile => profile.id)
+  const profileGuide = profiles.map(profile => `- ${profile.id}: ${profile.name} — ${profile.description}`).join('\n')
 
   return defineTool({
     name: 'subagent_profile',
-    description: 'Delegate a task to a maintained subagent profile (Explore, General, Vision, or a custom profile). ' +
-      'Each profile fixes a model, thinking variant, persona, and optional tool restrictions. ' +
+    description: 'Delegate a task to a maintained subagent profile. ' +
+      'Each profile fixes a model, thinking variant, persona, optional tool restrictions, and optional preset. ' +
       'When `profile` is omitted this behaves like the plain subagent tool using the parent defaults. ' +
       'When the task involves an image, pass `imagePath` so the subagent reads it with read_image first. ' +
-      'Spawned children appear in the normal subagent UI.',
+      'Spawned children appear in the normal subagent UI.\n\nAvailable profiles:\n' + profileGuide,
     parameters: {
       ...(enabledIds.length > 0 ? {
         profile: {
           type: 'string',
           enum: enabledIds,
-          description: 'Maintained subagent profile id to use; omit for free delegation.',
+          description: 'Maintained subagent profile id to use; omit for free delegation.\n\n' + profileGuide,
         },
       } : {}),
       prompt: {

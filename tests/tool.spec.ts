@@ -33,6 +33,7 @@ function fakeStore(profiles: SubagentProfile[]): SubagentStore & {
   canPersistContinuableProfile: ReturnType<typeof vi.fn>
 } {
   return {
+    list: () => profiles,
     enabledIds: () => profiles.filter(item => item.enabled).map(item => item.id),
     find: (id: string) => profiles.find(item => item.id === id),
     recordContinuableProfile: vi.fn(),
@@ -180,6 +181,7 @@ describe('subagent profile tool execute', () => {
   it('rejects disabled profiles before starting a child', async () => {
     const disabled = { ...profile, id: 'disabled', enabled: false }
     const store = {
+      list: () => [disabled],
       enabledIds: () => ['disabled'],
       find: () => disabled,
     } as unknown as SubagentStore

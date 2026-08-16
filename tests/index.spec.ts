@@ -68,6 +68,7 @@ describe('host wiring', () => {
     expect(on).toHaveBeenCalledWith('agent/request', expect.any(Function))
     expect(on).toHaveBeenCalledWith('agent/created', expect.any(Function))
     expect(section).toHaveBeenCalledWith(expect.objectContaining({ name: 'dsh-subagents:image-reading' }))
+    expect(section).toHaveBeenCalledWith(expect.objectContaining({ name: 'dsh-subagents:profiles' }))
   })
 
   it('does not re-enter syncTool when tool creation notifies the store', () => {
