@@ -4,7 +4,7 @@
 
 **Goal:** 让 dsh-subagents 的 Thinking Variant 下拉按“手动配置优先、DSH 模型目录兜底”显示每个模型可用档位，并让 composer 模型面板使用同一套配置；首次启动自动 seed `stepfun / step-3.7-flash`。
 
-**Architecture:** dsh-subagents 在 `~/.dsh/dsh-subagents.json` 新增 `modelThinkingConfigs`，通过 REST CRUD 暴露给 Settings UI；composer 所在的 vendor remote-web-ui 通过同一 REST 拉取手动配置并覆盖目录 reasoning 元数据。有效配置解析收敛到 `src/thinking.ts` 纯函数。
+**Architecture:** dsh-subagents 在 `~/.dsh/dsh-subagents.json` 新增 `modelThinkingConfigs`，通过 REST CRUD 暴露给 Settings UI；composer 所在的 vendor remote-web-ui 通过 `/m/api` 白名单方法 `dshSubagents.thinkingConfigs` 读取 host 服务提供的手动配置并覆盖目录 reasoning 元数据。有效配置解析收敛到 `src/thinking.ts` 纯函数。
 
 **Tech Stack:** TypeScript 5.7, React 18, Vitest, Cordis, pnpm, dsh-subagents plugin, vendor dsh-remote-web-ui plugin.
 
