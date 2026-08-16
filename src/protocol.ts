@@ -1,6 +1,25 @@
 /** Shared wire types for the dsh-subagents plugin (host + browser halves). */
 
-export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high' | 'max'
+/** Adapter 的 opaque thinking variant id；undefined 表示跟随模型默认。 */
+export type ReasoningEffort = string
+
+export interface ModelThinkingVariant {
+  id: string
+  name: string
+  description?: string
+}
+
+export interface ModelThinkingConfig {
+  provider: string
+  model: string
+  variants: ModelThinkingVariant[]
+  defaultVariant?: string
+}
+
+export interface ModelThinkingConfigPatch {
+  variants?: ModelThinkingVariant[]
+  defaultVariant?: string | null
+}
 
 export type SubagentProviderName = 'spawn' | 'fork'
 
@@ -62,4 +81,5 @@ export const SUBAGENTS_API = {
   restoreBuiltins: '/api/dsh-subagents/profiles/restore-builtins',
   tools: '/api/dsh-subagents/tools',
   modelInfo: '/api/dsh-subagents/model-info',
+  thinkingConfigs: '/api/dsh-subagents/thinking-configs',
 } as const
