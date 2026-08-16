@@ -48,11 +48,13 @@ describe('host wiring', () => {
     const registerTool = vi.fn(() => () => {})
     const registerRoute = vi.fn(() => () => {})
     const on = vi.fn(() => () => {})
+    const section = vi.fn(() => () => {})
     const effect = vi.fn((callback: () => () => void) => callback())
     const ctx = {
       effect,
       tools: { register: registerTool },
       webServer: { register: registerRoute },
+      systemPrompt: { section },
       on,
       get: vi.fn(() => undefined),
     } as never
@@ -63,17 +65,20 @@ describe('host wiring', () => {
     expect(registerRoute).toHaveBeenCalledTimes(4)
     expect(registerTool).toHaveBeenCalled()
     expect(on).toHaveBeenCalledWith('agent/request', expect.any(Function))
+    expect(section).toHaveBeenCalledWith(expect.objectContaining({ name: 'dsh-subagents:image-reading' }))
   })
 
   it('does not re-enter syncTool when tool creation notifies the store', () => {
     const registerTool = vi.fn(() => () => {})
     const registerRoute = vi.fn(() => () => {})
     const on = vi.fn(() => () => {})
+    const section = vi.fn(() => () => {})
     const effect = vi.fn((callback: () => () => void) => callback())
     const ctx = {
       effect,
       tools: { register: registerTool },
       webServer: { register: registerRoute },
+      systemPrompt: { section },
       on,
       get: vi.fn(() => undefined),
     } as never

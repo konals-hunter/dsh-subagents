@@ -5,6 +5,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { SubagentStore } from './store.ts'
@@ -16,7 +17,16 @@ import { installEffortInjection } from './effort.ts'
 export const name = 'dsh-subagents'
 
 /** Services required before the surfaces can mount. */
-export const inject = ['webServer', 'tools', 'subagents'] as const
+export const inject = ['webServer', 'tools', 'subagents', 'systemPrompt'] as const
+
+/** Prompt-order slot for the image-reading guidance. */
+const IMAGE_GUIDANCE_ORDER = 90
+
+/** Model-facing guidance: use read_image for image paths, not read. */
+export const IMAGE_READING_GUIDANCE
+  = 'When the user asks you to read, view, or describe an image file path (PNG/JPEG/WebP/GIF), '
+    + 'call `read_image` directly with `file_path`. Do not use `read` on binary image files: '
+    + '`read` only handles UTF-8 text and will fail with a `binary file` error.'
 
 /**
  * Mount the store, routes, tool, and effort listener. Tool registration is
@@ -45,11 +55,17 @@ export function apply(ctx: Context): void {
     }
     const disposers = routes.map(route => ctx.webServer.register(route))
     const disposeEffort = installEffortInjection(ctx, store)
+    const disposeImageGuidance = ctx.systemPrompt.section({
+      name: 'dsh-subagents:image-reading',
+      order: IMAGE_GUIDANCE_ORDER,
+      text: IMAGE_READING_GUIDANCE,
+    })
     const unsubscribe = store.subscribe(syncTool)
     syncTool()
     return () => {
       for (const dispose of disposers) dispose()
       disposeEffort()
+      disposeImageGuidance()
       unsubscribe()
       if (disposeTool !== undefined) disposeTool()
     }
