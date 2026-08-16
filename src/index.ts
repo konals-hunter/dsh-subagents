@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { SubagentStore } from './store.ts'
-import { makeRoutes } from './routes.ts'
+import { makeRoutes, type LlmDiagnosticFace } from './routes.ts'
 import { makeSubagentProfileTool } from './tool.ts'
 import { installEffortInjection } from './effort.ts'
 
@@ -27,7 +27,8 @@ export function apply(ctx: Context): void {
   const store = new SubagentStore()
   store.list()
 
-  const { routes } = makeRoutes({ store, tools: ctx.tools })
+  const llm = ctx.get('llm') as LlmDiagnosticFace | undefined
+  const { routes } = makeRoutes({ store, tools: ctx.tools, llm })
 
   ctx.effect(() => {
     let disposeTool: (() => void) | undefined

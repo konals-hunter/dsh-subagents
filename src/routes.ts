@@ -59,9 +59,18 @@ function queryParam(url: URL, name: string): string | undefined {
   return value === null ? undefined : value
 }
 
+/** Minimal llm seam used by the model-info diagnostic route. */
+export interface LlmDiagnosticFace {
+  resolveModelInfo(provider: string, model: string): Promise<{ inputModalities?: readonly string[] }>
+}
+
 /** Build every /api/dsh-subagents route. */
-export function makeRoutes(deps: { store: SubagentStore; tools: { schemas(): { name: string }[] } }): { routes: WebRoute[] } {
-  const { store, tools } = deps
+export function makeRoutes(deps: {
+  store: SubagentStore
+  tools: { schemas(): { name: string }[] }
+  llm?: LlmDiagnosticFace
+}): { routes: WebRoute[] } {
+  const { store, tools, llm } = deps
 
   const routes: WebRoute[] = [
     {
@@ -135,6 +144,31 @@ export function makeRoutes(deps: { store: SubagentStore; tools: { schemas(): { n
         if (req.method !== 'GET') { writeJson(res, 405, { error: 'method not allowed: ' + (req.method ?? '') }); return }
         try {
           writeJson(res, 200, { tools: tools.schemas().map(schema => schema.name) })
+        } catch (error) {
+          writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+        }
+      },
+    },
+    {
+      kind: 'exact',
+      path: SUBAGENTS_API.modelInfo,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) { writeJson(res, 403, { error: 'forbidden: loopback-only' }); return }
+        if (req.method !== 'GET') { writeJson(res, 405, { error: 'method not allowed: ' + (req.method ?? '') }); return }
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const provider = queryParam(url, 'provider')
+        const model = queryParam(url, 'model')
+        if (provider === undefined || provider === '' || model === undefined || model === '') {
+          writeJson(res, 400, { error: 'provider and model query parameters are required' })
+          return
+        }
+        if (llm === undefined) {
+          writeJson(res, 503, { error: 'llm service unavailable' })
+          return
+        }
+        try {
+          const info = await llm.resolveModelInfo(provider, model)
+          writeJson(res, 200, { provider, model, inputModalities: info.inputModalities ?? [] })
         } catch (error) {
           writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
         }

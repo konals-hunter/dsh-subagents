@@ -347,6 +347,21 @@ describe('subagents routes', () => {
     expect((response.json as { tools: string[] }).tools).toEqual(['read_file', 'write_file'])
   })
 
+  it('reports model input modalities from llm.resolveModelInfo', async () => {
+    const { routes } = makeRoutes({
+      store,
+      tools: { schemas: () => [] },
+      llm: {
+        resolveModelInfo: async () => ({ inputModalities: ['text', 'image'] }),
+      },
+    })
+    const route = routes.find(r => r.kind === 'exact' && r.path === '/api/dsh-subagents/model-info')
+    expect(route).toBeDefined()
+    const response = await callHandler(route!, 'GET', '/api/dsh-subagents/model-info?provider=stepfun&model=step-3.7-flash')
+    expect(response.status).toBe(200)
+    expect((response.json as { inputModalities: string[] }).inputModalities).toEqual(['text', 'image'])
+  })
+
   it('rejects non-loopback Host headers with 403', async () => {
     const response = await rawRequest('/api/dsh-subagents/profiles', { host: 'example.com' })
     expect(response.status).toBe(403)

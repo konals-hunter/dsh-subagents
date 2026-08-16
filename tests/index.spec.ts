@@ -54,12 +54,13 @@ describe('host wiring', () => {
       tools: { register: registerTool },
       webServer: { register: registerRoute },
       on,
+      get: vi.fn(() => undefined),
     } as never
 
     apply(ctx as never)
 
     expect(effect).toHaveBeenCalled()
-    expect(registerRoute).toHaveBeenCalledTimes(3)
+    expect(registerRoute).toHaveBeenCalledTimes(4)
     expect(registerTool).toHaveBeenCalled()
     expect(on).toHaveBeenCalledWith('agent/request', expect.any(Function))
   })
@@ -74,6 +75,7 @@ describe('host wiring', () => {
       tools: { register: registerTool },
       webServer: { register: registerRoute },
       on,
+      get: vi.fn(() => undefined),
     } as never
 
     apply(ctx as never)

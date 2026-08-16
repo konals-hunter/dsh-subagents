@@ -59,4 +59,5 @@ export const SUBAGENTS_API = {
   profiles: '/api/dsh-subagents/profiles',
   restoreBuiltins: '/api/dsh-subagents/profiles/restore-builtins',
   tools: '/api/dsh-subagents/tools',
+  modelInfo: '/api/dsh-subagents/model-info',
 } as const
