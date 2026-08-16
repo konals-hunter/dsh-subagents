@@ -17,6 +17,8 @@ DSH Subagent 配置管理插件：在设置中维护内置/自定义 Subagent，
   读取图片，让多模态模型（如 Vision）真正“看到”图片。
 - 子 Agent 与官方工具使用同一 `spawn`/`fork` provider，因此会出现在正常
   subagent 列表面板中。
+- 每个模型可配置可用 Thinking Variant（`low/medium/high` 等）与默认档位；Subagents 和 composer 模型面板共用这套配置。
+- 首次启动自动写入 `stepfun / step-3.7-flash` 的 `low/medium/high`（默认 `medium`）配置。
 
 ## 提示：在 DSH 中配置支持图片的视觉模型
 

@@ -14,6 +14,8 @@ through the native `ctx.subagents` providers.
 - One `subagent_profile` tool with an optional `profile` parameter; omitting the profile behaves like the plain `subagent` tool.
 - Optional `imagePath` parameter: when set, the subagent is instructed to call `read_image` first so multimodal models (e.g. Vision) can see the image.
 - Spawned children use the same `spawn`/`fork` providers as the official tool, so they appear in the normal subagent UI.
+- Per-model Thinking Variant configuration (available efforts + default); shared by Subagents and the composer model picker.
+- On first launch, `stepfun / step-3.7-flash` is seeded with `low/medium/high` (default `medium`).
 
 ## Tip: Configure a vision-capable model in DSH
 
