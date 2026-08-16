@@ -52,8 +52,8 @@ export function builtinProfiles(now = Date.now()): SubagentProfile[] {
       name: 'Vision',
       description: 'Vision-capable subagent for image understanding and visual analysis.',
       reasoningEffort: 'medium',
-      persona: 'You are a vision subagent. When the task involves images, use vision tools to inspect them before answering.',
-      promptTemplate: 'Inspect any provided image first, then answer based on what you observe.',
+      persona: 'You are a vision subagent. When the task provides an image path, always call the read_image tool with that file_path to load the image into your context before answering.',
+      promptTemplate: 'If the task provides an image path, first call read_image with that file_path, then describe or analyze the image based on what you see.',
     },
   ]
 }
